@@ -1,0 +1,9 @@
+verbosity: trace
+network:
+  publicaddr: 127.0.0.1:5555
+  truststorefile: etc/truststore.pem
+  certfile: etc/node1.pem
+  certkeyfile: etc/node1.pem
+  enabletls: false
+  bootstrapnodes:
+    - 127.0.0.1:5555

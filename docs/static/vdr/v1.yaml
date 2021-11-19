@@ -1,0 +1,154 @@
+openapi: "3.0.0"
+info:
+  title: Verifiable Data Registry API spec
+  description: API specification for the Verifiable Data Registry
+  version: 1.0.0
+  license:
+    name: GPLv3
+servers:
+  - url: http://localhost:1323
+paths:
+  /internal/vdr/v1/did:
+    post:
+      summary: Creates a new DID
+      description: |
+        The DID Document will be created according to the given request. If a combination of options is not allowed, a 400 is returned.
+        The default values for selfControl, assertionMethod and capabilityInvocation are true. The default for controllers is an empty list. All other options default to false.
+        Only a single keypair will be generated. All enabled methods will reuse the same key pair. A seperate keypair will be generated to generate the DID if SelfControl is false.
+        error returns:
+        * 400 - Invalid (combination of) options
+        * 500 - An error occurred while processing the request
+      operationId: "createDID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DIDCreateRequest'
+      tags:
+        - DID
+      responses:
+        "200":
+          description: "New DID has been created successfully. Returns the DID document."
+          content:
+            application/json+did-document:
+              schema:
+                $ref: '#/components/schemas/DIDDocument'
+        default:
+          $ref: '../common/error_response.yaml'
+components:
+  schemas:
+    DIDDocument:
+      type: object
+      description: A DID document according to the W3C spec
+      required:
+        - id
+      properties:
+        assertionMethod:
+          description: List of KIDs that may sign JWTs, JWSs and VCs
+          type: array
+          items:
+            type: string
+        authentication:
+          description: List of KIDs that may alter DID documents that they control
+          type: array
+          items:
+            type: string
+        context:
+          description: List of URIs
+          type: array
+          items:
+            type: string
+        controller:
+          description: Single DID (as string) or List of DIDs that have control over the DID document
+        id:
+          description: DID according to specification
+          example: "did:ugra:1"
+          type: string
+        service:
+          description: List of supported services by the DID subject
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        verificationMethod:
+          description: list of keys
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationMethod'
+    Service:
+      type: object
+      description: A service supported by a DID subject.
+      required:
+        - id
+        - type
+        - serviceEndpoint
+      properties:
+        id:
+          description: ID of the service.
+          type: string
+        type:
+          description: The type of the endpoint.
+          type: string
+        serviceEndpoint:
+          description: Either a URI or a complex object.
+          type: object
+    VerificationMethod:
+      description: A public key in JWK form.
+      required:
+        - id
+        - type
+        - controller
+        - publicKeyJwk
+      properties:
+        controller:
+          description: The DID subject this key belongs to.
+          example: "did:ugra:1"
+          type: string
+        id:
+          description: The ID of the key, used as KID in various JWX technologies.
+          type: string
+        publicKeyJwk:
+          description: The public key formatted according rfc7517.
+          type: object
+        type:
+          description: The type of the key.
+          example: "JsonWebKey2020"
+          type: string
+    DIDCreateRequest:
+      properties:
+        controllers:
+          description: |
+            List of DIDs that can control the new DID Document. If selfControl = true and controllers is not empty,
+            the newly generated DID will be added to the list of controllers.
+          type: array
+          items:
+            type: string
+            description: DID according to specification
+            example: "did:ugra:128903fjgfslcnmgpe84"
+        assertionMethod:
+          type: boolean
+          description: indicates if the generated key pair can be used for assertions.
+          default: true
+        authentication:
+          type: boolean
+          description: indicates if the generated key pair can be used for authentication.
+          default: false
+        capabilityInvocation:
+          type: boolean
+          description: |
+            indicates if the generated key pair can be used for altering DID Documents.
+            In combination with selfControl = true, the key can be used to alter the new DID Document.
+            Defaults to true when not given.
+            default: true
+        capabilityDelegation:
+          type: boolean
+          description: indicates if the generated key pair can be used for capability delegations.
+          default: false
+        keyAgreement:
+          type: boolean
+          description: indicates if the generated key pair can be used for Key agreements.
+          default: false
+        selfControl:
+          type: boolean
+          description: whether the generated DID Document can be altered with its own capabilityInvocation key.
+          default: true

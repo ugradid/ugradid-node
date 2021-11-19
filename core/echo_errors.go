@@ -1,0 +1,173 @@
+/*
+ * Copyright (c) 2021 ugradid community
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package core
+
+import (
+	"errors"
+	"fmt"
+	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
+	"net/http"
+	"schneider.vip/problem"
+)
+
+const OperationIDContextKey = "!!OperationId"
+
+const StatusCodeResolverContextKey = "!!StatusCodeResolver"
+
+const ModuleNameContextKey = "!!ModuleName"
+const unmappedStatusCode = 0
+
+func createHTTPErrorHandler() echo.HTTPErrorHandler {
+	return func(err error, ctx echo.Context) {
+
+		if echoErr, ok := err.(*echo.HTTPError); ok {
+			err = httpStatusCodeError{
+				msg:        fmt.Sprintf("%s", echoErr.Message),
+				statusCode: echoErr.Code,
+				err:        echoErr,
+			}
+		}
+		operationID := ctx.Get(OperationIDContextKey)
+		title := "Operation failed"
+		if operationID != nil {
+			title = fmt.Sprintf("%s failed", fmt.Sprintf("%s", operationID))
+		}
+		statusCode := getHTTPStatusCode(err, ctx)
+		result := problem.New(problem.Title(title), problem.Status(statusCode), problem.Detail(err.Error()))
+		logger := getContextLogger(ctx)
+		if statusCode == http.StatusInternalServerError {
+			logger.WithError(err).Error(title)
+		} else {
+			logger.WithError(err).Warn(title)
+		}
+		if !ctx.Response().Committed {
+			if _, err := result.WriteTo(ctx.Response()); err != nil {
+				logger.Error(err)
+			}
+		} else {
+			logger.Warnf("Unable to send error back to client, response already committed: %v", err)
+		}
+	}
+}
+
+// Error returns an error that maps to a HTTP status
+func Error(statusCode int, errStr string, args ...interface{}) error {
+	return httpStatusCodeError{msg: fmt.Errorf(errStr, args...).Error(),
+		err: getErrArg(args), statusCode: statusCode}
+}
+
+// NotFoundError returns an error that maps to a HTTP 404 Status Not Found.
+func NotFoundError(errStr string, args ...interface{}) error {
+	return Error(http.StatusNotFound, errStr, args...)
+}
+
+// InvalidInputError returns an error that maps to a HTTP 400 Bad Request.
+func InvalidInputError(errStr string, args ...interface{}) error {
+	return Error(http.StatusBadRequest, errStr, args...)
+}
+
+// PreconditionFailedError returns an error that maps to a HTTP 412 Status Precondition Failed.
+func PreconditionFailedError(errStr string, args ...interface{}) error {
+	return Error(http.StatusPreconditionFailed, errStr, args...)
+}
+
+// HTTPStatusCodeError defines an interface for HTTP errors that includes a HTTP statuscode
+type HTTPStatusCodeError interface {
+	StatusCode() int
+}
+
+type httpStatusCodeError struct {
+	msg        string
+	statusCode int
+	err        error
+}
+
+func (e httpStatusCodeError) StatusCode() int {
+	return e.statusCode
+}
+
+func (e httpStatusCodeError) Is(other error) bool {
+	cast, is := other.(httpStatusCodeError)
+	if is {
+		return cast.statusCode == e.statusCode
+	}
+	return false
+}
+
+func (e httpStatusCodeError) Unwrap() error {
+	return e.err
+}
+
+func (e httpStatusCodeError) Error() string {
+	return e.msg
+}
+
+func getErrArg(args []interface{}) error {
+	for _, arg := range args {
+		if err, ok := arg.(error); ok {
+			return err
+		}
+	}
+	return nil
+}
+
+type ErrorStatusCodeResolver interface {
+	ResolveStatusCode(err error) int
+}
+
+func ResolveStatusCode(err error, mapping map[error]int) int {
+	for curr, code := range mapping {
+		if errors.Is(err, curr) {
+			return code
+		}
+	}
+	return unmappedStatusCode
+}
+
+func getHTTPStatusCode(err error, ctx echo.Context) int {
+	if predefined, ok := err.(HTTPStatusCodeError); ok {
+		return predefined.StatusCode()
+	}
+
+	statusCodeResolverInterf := ctx.Get(StatusCodeResolverContextKey)
+	var result int
+	if statusCodeResolverInterf != nil {
+		if statusCodeResolver, ok := statusCodeResolverInterf.(ErrorStatusCodeResolver); ok {
+			result = statusCodeResolver.ResolveStatusCode(err)
+		}
+	}
+	if result == unmappedStatusCode {
+		result = http.StatusInternalServerError
+	}
+	return result
+}
+
+func getContextLogger(ctx echo.Context) *logrus.Entry {
+	fields := logrus.Fields{}
+	moduleName := ctx.Get(ModuleNameContextKey)
+	if moduleName != nil {
+		fields["module"] = moduleName
+	}
+	operationID := ctx.Get(OperationIDContextKey)
+	if operationID != nil {
+		fields["operation"] = operationID
+	}
+	return logrus.StandardLogger().WithFields(fields)
+}
+

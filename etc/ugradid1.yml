@@ -1,0 +1,10 @@
+datadir: data1
+verbosity: trace
+network:
+  grpcaddr: 127.0.0.1:5556
+  truststorefile: etc/truststore.pem
+  certfile: etc/node2.pem
+  certkeyfile: etc/node2.pem
+  enabletls: false
+  bootstrapnodes:
+    - 127.0.0.1:5555

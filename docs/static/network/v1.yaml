@@ -1,0 +1,88 @@
+openapi: "3.0.0"
+info:
+  title: ugradid network API spec
+  description: API specification for RPC services available at the ugra-network
+  version: 0.1.0
+  license:
+    name: GPLv3
+servers:
+  - url: http://localhost:1323
+paths:
+  /internal/network/v1/transaction:
+    get:
+      summary: "Lists the transactions on the DAG"
+      description: >
+        Lists all transactions on the DAG. Since this call returns all transactions on the DAG, care should be taken when there
+        are many of them.
+        * 500 - internal server error
+      operationId: "listTransactions"
+      tags:
+        - transactions
+      responses:
+        "200":
+          description: "Successfully listed the transactions"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        default:
+          $ref: '../common/error_response.yaml'
+  /internal/network/v1/transaction/{ref}:
+    parameters:
+      - name: ref
+        in: path
+        description: "Reference of the transaction"
+        required: true
+        example: "4960afbdf21280ef248081e6e52317735bbb929a204351291b773c252afeebf4"
+        schema:
+          type: string
+    get:
+      summary: "Retrieves a transaction"
+      description: |
+        Retrieves a transaction.
+        error returns:
+        * 400 - invalid transaction reference
+        * 404 - transaction not found
+        * 500 - internal server error
+      operationId: "getTransaction"
+      tags:
+        - transactions
+      responses:
+        "200":
+          description: "Transaction is known in the transaction log"
+          content:
+            application/jose:
+              schema:
+                type: string
+        default:
+          $ref: '../common/error_response.yaml'
+  /internal/network/v1/transaction/{ref}/payload:
+    parameters:
+      - name: ref
+        in: path
+        description: "Reference of the transaction"
+        required: true
+        example: "4960afbdf21280ef248081e6e52317735bbb929a204351291b773c252afeebf4"
+        schema:
+          type: string
+    get:
+      summary: "Gets the transaction payload"
+      operationId: "getTransactionPayload"
+      description: |
+        Gets the transaction payload.
+        error returns:
+        * 400 - invalid transaction reference
+        * 404 - transaction or payload not found
+        * 500 - internal server error
+      tags:
+        - transactions
+      responses:
+        "200":
+          description: "Transaction found (with payload) and returned."
+          content:
+            application/octet-stream:
+              example:
+        default:
+          $ref: '../common/error_response.yaml'
