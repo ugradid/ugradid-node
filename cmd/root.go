@@ -22,12 +22,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ugradid/ugradid-node/core"
 	"github.com/ugradid/ugradid-node/crypto"
-	"github.com/ugradid/ugradid-node/db"
-	dbCmd "github.com/ugradid/ugradid-node/db/cmd"
 	"github.com/ugradid/ugradid-node/network"
 	networkAPI "github.com/ugradid/ugradid-node/network/api/v1"
+	"github.com/ugradid/ugradid-node/vcr"
+	vcrAPI "github.com/ugradid/ugradid-node/vcr/api/v1"
 	"github.com/ugradid/ugradid-node/vdr"
 	vdrAPI "github.com/ugradid/ugradid-node/vdr/api/v1"
+	vdrCmd "github.com/ugradid/ugradid-node/vdr/cmd"
 	"github.com/ugradid/ugradid-node/vdr/doc"
 	"github.com/ugradid/ugradid-node/vdr/store"
 	"io"
@@ -125,32 +126,36 @@ func CreateSystem() *core.System {
 	system := core.NewSystem()
 
 	// Create instances
-	databaseInstance := db.NewDatabaseInstance()
+	vdrStoreInstance := store.NewVdrStoreInstance()
 
-	vdrStore := store.NewBBoltStore(databaseInstance)
+	keyResolver := doc.KeyResolver{Store: vdrStoreInstance}
 
-	keyResolver := doc.KeyResolver{Store: vdrStore}
-
-	docResolver := doc.Resolver{Store: vdrStore}
+	docResolver := doc.Resolver{Store: vdrStoreInstance}
 
 	cryptoInstance := crypto.NewCryptoInstance()
 
 	networkInstance := network.NewNetworkInstance(
-		databaseInstance, network.DefaultConfig(), keyResolver)
+		network.DefaultConfig(), keyResolver)
 
 	vdrInstance := vdr.NewVdr(
-		vdr.DefaultConfig(), cryptoInstance, networkInstance, vdrStore)
+		vdr.DefaultConfig(), cryptoInstance, networkInstance, vdrStoreInstance)
+
+	vcrInstance := vcr.NewVCRInstance(
+		cryptoInstance, docResolver, keyResolver, networkInstance)
 
 	// Register HTTP routes
 	system.RegisterRoutes(&networkAPI.Wrapper{Service: networkInstance})
 
 	system.RegisterRoutes(&vdrAPI.Wrapper{VDR: vdrInstance, DocResolver: docResolver})
 
+	system.RegisterRoutes(&vcrAPI.Wrapper{ Vcr: vcrInstance})
+
 	// Register engines
-	system.RegisterEngine(databaseInstance)
+	system.RegisterEngine(vdrStoreInstance)
 	system.RegisterEngine(cryptoInstance)
 	system.RegisterEngine(networkInstance)
 	system.RegisterEngine(vdrInstance)
+	system.RegisterEngine(vcrInstance)
 
 	return system
 }
@@ -179,5 +184,5 @@ func Execute(system *core.System) {
 
 func addFlagSets(cmd *cobra.Command) {
 	cmd.PersistentFlags().AddFlagSet(core.FlagSet())
-	cmd.PersistentFlags().AddFlagSet(dbCmd.FlagSet())
+	cmd.PersistentFlags().AddFlagSet(vdrCmd.FlagSet())
 }

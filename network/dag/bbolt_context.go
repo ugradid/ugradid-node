@@ -20,7 +20,6 @@ package dag
 import (
 	"context"
 	"errors"
-	"github.com/ugradid/ugradid-node/db"
 	"go.etcd.io/bbolt"
 )
 
@@ -30,18 +29,18 @@ type bboltTXCallback func(contextWithTX context.Context, tx *bbolt.Tx) error
 
 // bboltTXView executes the given callback in a read-only BBolt transaction. It attempts to re-use the active transaction from the given context, if there is one.
 // If there's no active transaction a new one will be started.
-func bboltTXView(ctx context.Context,db db.BboltDatabase, cb bboltTXCallback) error {
+func bboltTXView(ctx context.Context,db *bbolt.DB, cb bboltTXCallback) error {
 	return callBBoltCallbackWithTX(ctx, db, cb, false)
 }
 
 // bboltTXUpdate executes the given callback in a writable BBolt transaction. It attempts to re-use the active transaction from the given context, if there is one.
 // If there's no active transaction a new one will be started.
 // If there's an active transaction which is readonly an error will be returned.
-func bboltTXUpdate(ctx context.Context, db db.BboltDatabase, cb bboltTXCallback) error {
+func bboltTXUpdate(ctx context.Context, db *bbolt.DB, cb bboltTXCallback) error {
 	return callBBoltCallbackWithTX(ctx, db, cb, true)
 }
 
-func callBBoltCallbackWithTX(ctx context.Context, db db.BboltDatabase, cb bboltTXCallback, writable bool) error {
+func callBBoltCallbackWithTX(ctx context.Context, db *bbolt.DB, cb bboltTXCallback, writable bool) error {
 	tx, txIsActive := ctx.Value(bboltTXContextKey).(*bbolt.Tx)
 	if !txIsActive {
 		// No active TX, we can simply start one here as long as we put it in the context we pass down, allowing nested BBolt database callers to re-use the transaction.

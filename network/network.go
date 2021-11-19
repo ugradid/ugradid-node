@@ -23,10 +23,10 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/ugradid/ugradid-node/core"
 	"github.com/ugradid/ugradid-node/crypto"
 	"github.com/ugradid/ugradid-node/crypto/hash"
-	"github.com/ugradid/ugradid-node/db"
 	"github.com/ugradid/ugradid-node/network/dag"
 	"github.com/ugradid/ugradid-node/network/log"
 	"github.com/ugradid/ugradid-node/network/transport"
@@ -34,6 +34,10 @@ import (
 	v1 "github.com/ugradid/ugradid-node/network/transport/v1"
 	"github.com/ugradid/ugradid-node/network/transport/v1/p2p"
 	"github.com/ugradid/ugradid-node/vdr/types"
+	"go.etcd.io/bbolt"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,6 +48,12 @@ const (
 	// ModuleName specifies the name of this module.
 	ModuleName = "network"
 )
+
+// boltDBFileMode holds the Unix file mode the created BBolt database files will have.
+const boltDBFileMode = 0600
+
+// defaultBBoltOptions are given to bbolt, allows for package local adjustments during test
+var defaultBBoltOptions = bbolt.DefaultOptions
 
 type Network struct {
 	config                 Config
@@ -56,12 +66,10 @@ type Network struct {
 	startTime              atomic.Value
 	keyResolver            types.KeyResolver
 	peerID                 transport.PeerId
-	db                     db.BboltDatabase
 }
 
-func NewNetworkInstance(db db.BboltDatabase, config Config, keyResolver types.KeyResolver) *Network {
+func NewNetworkInstance(config Config, keyResolver types.KeyResolver) *Network {
 	result := &Network{
-		db:                     db,
 		config:                 config,
 		keyResolver:            keyResolver,
 		lastTransactionTracker: lastTransactionTracker{headRefs: make(map[hash.SHA256Hash]bool, 0)},
@@ -72,8 +80,22 @@ func NewNetworkInstance(db db.BboltDatabase, config Config, keyResolver types.Ke
 // Configure configures the Network subsystem
 func (n *Network) Configure(config core.ServerConfig) error {
 
-	n.graph = dag.NewBBoltDAG(n.db, dag.NewSigningTimeVerifier(), dag.NewPrevTransactionsVerifier(), dag.NewTransactionSignatureVerifier(n.keyResolver))
-	n.payloadStore = dag.NewBBoltPayloadStore(n.db)
+	dbFile := path.Join(config.Datadir, "network", n.config.File)
+	if err := os.MkdirAll(filepath.Dir(dbFile), os.ModePerm); err != nil {
+		return err
+	}
+
+	logrus.Infof("Open network store %s", n.config.File)
+
+	// for tests we set NoSync to true, this option can only be set through code
+	db, bboltErr := bbolt.Open(dbFile, boltDBFileMode, defaultBBoltOptions)
+	if bboltErr != nil {
+		return fmt.Errorf("unable to create BBolt database: %w", bboltErr)
+	}
+
+	n.graph = dag.NewBBoltDAG(db, dag.NewSigningTimeVerifier(), dag.NewPrevTransactionsVerifier(), dag.NewTransactionSignatureVerifier(n.keyResolver))
+
+	n.payloadStore = dag.NewBBoltPayloadStore(db)
 	n.publisher = dag.NewReplayingDAGPublisher(n.payloadStore, n.graph)
 	n.peerID = transport.PeerId(uuid.New().String())
 

@@ -22,6 +22,8 @@ import "github.com/ugradid/ugradid-node/network/transport/v1"
 type Config struct {
 	// Socket address for gRPC to listen on
 	GrpcAddr string `koanf:"network.grpcaddr"`
+	// File name store
+	File string `koanf:"network.file"`
 	// EnableTLS specifies whether to enable TLS for incoming connections.
 	EnableTLS bool `koanf:"network.enabletls"`
 	// Public address of this nodes other nodes can use to connect to this node.
@@ -39,8 +41,9 @@ type Config struct {
 // DefaultConfig returns the default NetworkEngine configuration.
 func DefaultConfig() Config {
 	return Config{
-		GrpcAddr:  ":5555",
+		GrpcAddr:   ":5555",
+		File:       "dag.db",
 		ProtocolV1: v1.DefaultConfig(),
-		EnableTLS: true,
+		EnableTLS:  true,
 	}
 }

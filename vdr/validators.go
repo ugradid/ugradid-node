@@ -28,7 +28,7 @@ import (
 
 // CreateDocumentValidator creates a DID Document validator that checks for inconsistencies in the the DID Document:
 // - validate it according to the W3C DID Core Data Model specification
-// - validate is according to the Nuts DID Method specification:
+// - validate is according to the Ugra DID Method specification:
 //  - it checks validationMethods for the following conditions:
 //   - every validationMethod id must have a fragment
 //   - every validationMethod id should have the DID prefix
@@ -45,7 +45,7 @@ func CreateDocumentValidator() did.Validator {
 	}}
 }
 
-// verificationMethodValidator validates the Verification Methods of a Nuts DID Document.
+// verificationMethodValidator validates the Verification Methods of a Ugra DID Document.
 type verificationMethodValidator struct{}
 
 func (v verificationMethodValidator) Validate(document did.Document) error {
@@ -73,7 +73,7 @@ func (v verificationMethodValidator) verifyThumbprint(method *did.VerificationMe
 	return nil
 }
 
-// serviceValidator validates the Services of a Nuts DID Document.
+// serviceValidator validates the Services of a DID Document.
 type serviceValidator struct{}
 
 func (s serviceValidator) Validate(document did.Document) error {

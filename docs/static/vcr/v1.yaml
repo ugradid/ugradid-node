@@ -1,0 +1,180 @@
+openapi: "3.0.0"
+info:
+  title: Verifiable Credential API spec
+  description: API specification for Verifiable Credentials
+  version: 1.0.0
+  license:
+    name: GPLv3
+servers:
+  - url: http://localhost:1323
+paths:
+  /internal/vcr/v1/vc:
+    post:
+      summary: Creates a new Verifiable Credential
+      description: |
+        Creates a new Verifiable Credential.
+        error returns:
+        * 400 - One or more of the given parameters are invalid
+        * 500 - An error occurred while processing the request
+      operationId: "create"
+      tags:
+        - credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueVCRequest'
+      responses:
+        "200":
+          description: "New VC has been created successfully. Returns the Verifiable Credential."
+          content:
+            application/vc+json:
+              schema:
+                $ref: '#/components/schemas/VerifiableCredential'
+        default:
+          $ref: '../common/error_response.yaml'
+  /internal/vcr/v1/vc/resolve:
+    post:
+      summary: "Resolves a verifiable credential"
+      description: >
+        The resolutionResult contains the credential regardless of the validity.
+        The resolutionResult.currentStatus must be checked to see if the credential is valid.
+        error returns:
+        * 404 - Corresponding credential could not be found
+        * 500 - An error occurred while processing the request
+      operationId: "resolve"
+      tags:
+        - credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveVCRequest'
+      responses:
+        "200":
+          description: Credential has been found and is returned.
+          content:
+            application/vc+json:
+              schema:
+                $ref: '#/components/schemas/ResolutionResult'
+        default:
+          $ref: '../common/error_response.yaml'
+components:
+  schemas:
+    ResolveVCRequest:
+      type: object
+      description: A request for issuing a new Verifiable Credential.
+      required:
+        - id
+        - credentialType
+      properties:
+        id:
+          description: URL encoded ID.
+          type: string
+          example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY#90382475609238467"
+        credentialType:
+          description: Credential type.
+          type: string
+          example: "OrganizationCredential"
+        resolveTime:
+          description:  a rfc3339 time string for resolving a VC at a specific moment in time.
+          type: string
+          example: "2012-01-02T12:00:00Z"
+    ResolutionResult:
+      type: object
+      description: result of a Resolve operation.
+      required:
+        - currentStatus
+        - verifiableCredential
+      properties:
+        currentStatus:
+          type: string
+          enum: [ "trusted", "revoked", "untrusted" ]
+          description: Only credentials with with "trusted" state are valid. If a revoked credential is also untrusted, revoked will be returned.
+        verifiableCredential:
+          $ref: "#/components/schemas/VerifiableCredential"
+    VerifiableCredential:
+      type: object
+      description: A credential according to the W3C and Nuts specs.
+      required:
+        - "@context"
+        - type
+        - issuer
+        - issuanceDate
+        - credentialSubject
+        - proof
+      properties:
+        "@context":
+          description: List of URIs
+          type: array
+          items:
+            type: string
+        id:
+          description: credential ID. A DID followed by a large number.
+          example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY"
+          type: string
+        type:
+          description: List of type definitions for the credential. Always includes 'VerifiableCredential'
+          type: array
+          items:
+            type: string
+        issuer:
+          $ref: '#/components/schemas/DID'
+        issuanceDate:
+          description: rfc3339 time string when the credential was issued.
+          type: string
+          example: "2012-01-02T12:00:00Z"
+        expirationDate:
+          description: rfc3339 time string untill when the credential is valid.
+          type: string
+          example: "2012-01-02T12:00:00Z"
+        credentialSubject:
+          $ref: '#/components/schemas/CredentialSubject'
+        proof:
+          description: one or multiple cryptographic proofs
+          type: object
+    IssueVCRequest:
+      type: object
+      description: A request for issuing a new Verifiable Credential.
+      required:
+        - type
+        - issuer
+        - credentialSubject
+      properties:
+        type:
+          description: Type definition for the credential.
+          type: string
+          example: "OrganizationCredential"
+        issuer:
+          description: DID according to specification.
+          type: string
+          example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY"
+        expirationDate:
+          description: rfc3339 time string until when the credential is valid.
+          type: string
+          example: "2012-01-02T12:00:00Z"
+        credentialSubject:
+          $ref: '#/components/schemas/CredentialSubject'
+    DID:
+      type: string
+      description: DID according to specification
+      example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY"
+    CredentialSubject:
+      type: object
+      description: Subject of a Verifiable Credential identifying the holder and expressing claims.
+    CredentialIssuer:
+      type: object
+      required:
+        - issuer
+        - credentialType
+      properties:
+        issuer:
+          description: the DID of an issuer
+          example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY"
+          type: string
+        credentialType:
+          description: a credential type
+          example: OrganizationCredential
+          type: string

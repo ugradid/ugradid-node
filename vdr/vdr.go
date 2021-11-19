@@ -34,31 +34,33 @@ import (
 	"time"
 )
 
-// Vdr stands for the Nuts Verifiable Data Registry. It is the public entrypoint to work with W3C DID documents.
+// Vdr stands for the Verifiable Data Registry. It is the public entrypoint to work with W3C DID documents.
 // It connects the Resolve, Create and Update DID methods to the network, and receives events back from the network which are processed in the store.
-// It is also a Runnable, Diagnosable and Configurable Nuts Engine.
+// It is also a Runnable, Diagnosable and Configurable Engine.
 type Vdr struct {
-	config            Config
-	store             types.Store
-	network           network.Transactions
-	OnChange          func(registry *Vdr)
-	_logger           *logrus.Entry
-	didDocCreator     types.DocCreator
-	didDocResolver    types.DocResolver
-	keyStore          crypto.KeyStore
+	config         Config
+	store          types.Store
+	network        network.Transactions
+	ambassador     Ambassador
+	OnChange       func(registry *Vdr)
+	_logger        *logrus.Entry
+	didDocCreator  types.DocCreator
+	didDocResolver types.DocResolver
+	keyStore       crypto.KeyStore
 }
 
 // NewVdr creates a new VDR with provided params
 func NewVdr(config Config, cryptoClient crypto.KeyStore,
 	networkClient network.Transactions, store types.Store) *Vdr {
 	return &Vdr{
-		config:            config,
-		network:           networkClient,
-		_logger:           log.Logger(),
-		store:             store,
-		didDocCreator:     doc.Creator{KeyStore: cryptoClient},
-		didDocResolver:    doc.Resolver{Store: store},
-		keyStore:          cryptoClient,
+		config:         config,
+		network:        networkClient,
+		_logger:        log.Logger(),
+		store:          store,
+		didDocCreator:  doc.Creator{KeyStore: cryptoClient},
+		didDocResolver: doc.Resolver{Store: store},
+		ambassador:     NewAmbassador(networkClient, store),
+		keyStore:       cryptoClient,
 	}
 }
 
@@ -73,6 +75,7 @@ func (r *Vdr) Config() interface{} {
 // Configure configures the VDR engine.
 func (r *Vdr) Configure(_ core.ServerConfig) error {
 	// Initiate the routines for auto-updating the data.
+	r.ambassador.Configure()
 	return nil
 }
 

@@ -20,7 +20,6 @@ package dag
 import (
 	"context"
 	"github.com/ugradid/ugradid-node/crypto/hash"
-	"github.com/ugradid/ugradid-node/db"
 	"go.etcd.io/bbolt"
 )
 
@@ -28,12 +27,12 @@ import (
 const payloadsBucketName = "payloads"
 
 // NewBBoltPayloadStore creates a etcd/bbolt backed payload store using the given database.
-func NewBBoltPayloadStore(db db.BboltDatabase) PayloadStore {
+func NewBBoltPayloadStore(db *bbolt.DB) PayloadStore {
 	return &bboltPayloadStore{db: db, observers: []Observer{}}
 }
 
 type bboltPayloadStore struct {
-	db        db.BboltDatabase
+	db        *bbolt.DB
 	observers []Observer
 }
 

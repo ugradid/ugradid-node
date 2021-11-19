@@ -20,12 +20,86 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"github.com/sirupsen/logrus"
 	"github.com/ugradid/ugradid-common/did"
+	"github.com/ugradid/ugradid-node/core"
 	"github.com/ugradid/ugradid-node/crypto/hash"
-	"github.com/ugradid/ugradid-node/db"
 	vdr "github.com/ugradid/ugradid-node/vdr/types"
 	"go.etcd.io/bbolt"
+	"os"
+	"path"
+	"path/filepath"
 )
+
+// boltDBFileMode holds the Unix file mode the created BBolt database files will have.
+const boltDBFileMode = 0600
+
+// defaultBBoltOptions are given to bbolt, allows for package local adjustments during test
+var defaultBBoltOptions = bbolt.DefaultOptions
+
+const (
+	// ModuleName contains the name of this module
+	ModuleName = "vdr-store"
+)
+
+// Config holds the values for the database engine
+type Config struct {
+	File string `koanf:"vdr.store.file"`
+}
+
+// DefaultVdrStoreConfig returns a Config with sane defaults
+func DefaultVdrStoreConfig() Config {
+	return Config{
+		File: "vdr.db",
+	}
+}
+
+var (
+	documentsBucket = []byte("documents")
+	versionsBucket  = []byte("document_versions")
+)
+
+type VdrStore struct {
+	db     *bbolt.DB
+	config Config
+}
+
+// NewVdrStoreInstance creates a new instance of the database engine.
+func NewVdrStoreInstance() *VdrStore {
+	return &VdrStore{
+		config: DefaultVdrStoreConfig(),
+	}
+}
+
+func (store *VdrStore) Name() string {
+	return ModuleName
+}
+
+func (store *VdrStore) Config() interface{} {
+	return &store.config
+}
+
+// Configure loads the given configurations in the engine. Any wrong combination will return an error
+func (store *VdrStore) Configure(config core.ServerConfig) error {
+
+	if store.config.File == "" {
+		return errors.New("vdr store file name is required")
+	}
+
+	dbFile := path.Join(config.Datadir, "vdr", store.config.File)
+	if err := os.MkdirAll(filepath.Dir(dbFile), os.ModePerm); err != nil {
+		return err
+	}
+
+	logrus.Infof("Open vdr store %s", store.config.File)
+
+	var err error
+	if store.db, err = bbolt.Open(dbFile, boltDBFileMode, defaultBBoltOptions); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 type documentVersion struct {
 	Document did.Document
@@ -77,21 +151,7 @@ func (entry documentVersionList) Latest() hash.SHA256Hash {
 	return entry.Versions[len(entry.Versions)-1]
 }
 
-var (
-	documentsBucket = []byte("vdr_documents")
-	versionsBucket  = []byte("vdr_document_versions")
-)
-
-type bboltStore struct {
-	db db.BboltDatabase
-}
-
-// NewBBoltStore returns an instance of a BBolt based VDR store
-func NewBBoltStore(db db.BboltDatabase) vdr.Store {
-	return &bboltStore{db: db}
-}
-
-func (store *bboltStore) storeDocument(tx *bbolt.Tx, document did.Document, metadata vdr.DocumentMetadata) error {
+func (store *VdrStore) storeDocument(tx *bbolt.Tx, document did.Document, metadata vdr.DocumentMetadata) error {
 	documents, err := tx.CreateBucketIfNotExists(documentsBucket)
 	if err != nil {
 		return err
@@ -112,7 +172,7 @@ func (store *bboltStore) storeDocument(tx *bbolt.Tx, document did.Document, meta
 	return nil
 }
 
-func (store *bboltStore) getDocumentVersion(bucket *bbolt.Bucket, hash hash.SHA256Hash) (*documentVersion, error) {
+func (store *VdrStore) getDocumentVersion(bucket *bbolt.Bucket, hash hash.SHA256Hash) (*documentVersion, error) {
 	data := bucket.Get(hash.Slice())
 	if data == nil {
 		return nil, nil
@@ -128,7 +188,7 @@ func (store *bboltStore) getDocumentVersion(bucket *bbolt.Bucket, hash hash.SHA2
 }
 
 // Iterate loops over all the latest versions of the stored DID Documents and applies fn
-func (store *bboltStore) Iterate(fn vdr.DocIterator) error {
+func (store *VdrStore) Iterate(fn vdr.DocIterator) error {
 	return store.db.View(func(tx *bbolt.Tx) error {
 		versions := tx.Bucket(versionsBucket)
 		if versions == nil {
@@ -161,7 +221,7 @@ func (store *bboltStore) Iterate(fn vdr.DocIterator) error {
 	})
 }
 
-func (store *bboltStore) filterDocument(doc *documentVersion, metadata *vdr.ResolveMetadata) error {
+func (store *VdrStore) filterDocument(doc *documentVersion, metadata *vdr.ResolveMetadata) error {
 	// Verify deactivated
 	if IsDeactivated(doc.Document) && (metadata == nil || !metadata.AllowDeactivated) {
 		return vdr.ErrDeactivated
@@ -211,7 +271,7 @@ func (store *bboltStore) filterDocument(doc *documentVersion, metadata *vdr.Reso
 // If metadata is not provided the latest version is returned.
 // If metadata is provided then the result is filtered or scoped on that metadata.
 // It returns ErrNotFound if there are no corresponding DID documents or when the DID Documents are disjoint with the provided ResolveMetadata
-func (store *bboltStore) Resolve(id did.DID, metadata *vdr.ResolveMetadata) (document *did.Document, documentMeta *vdr.DocumentMetadata, txErr error) {
+func (store *VdrStore) Resolve(id did.DID, metadata *vdr.ResolveMetadata) (document *did.Document, documentMeta *vdr.DocumentMetadata, txErr error) {
 	txErr = store.db.View(func(tx *bbolt.Tx) error {
 		documents := tx.Bucket(documentsBucket)
 		if documents == nil {
@@ -260,7 +320,7 @@ func (store *bboltStore) Resolve(id did.DID, metadata *vdr.ResolveMetadata) (doc
 }
 
 // Write writes a DID Document
-func (store *bboltStore) Write(document did.Document, metadata vdr.DocumentMetadata) error {
+func (store *VdrStore) Write(document did.Document, metadata vdr.DocumentMetadata) error {
 	return store.db.Update(func(tx *bbolt.Tx) error {
 		versions, err := tx.CreateBucketIfNotExists(versionsBucket)
 		if err != nil {
@@ -289,7 +349,7 @@ func (store *bboltStore) Write(document did.Document, metadata vdr.DocumentMetad
 }
 
 // Update replaces the DID document identified by DID with the nextVersion
-func (store *bboltStore) Update(id did.DID, current hash.SHA256Hash, next did.Document, metadata *vdr.DocumentMetadata) error {
+func (store *VdrStore) Update(id did.DID, current hash.SHA256Hash, next did.Document, metadata *vdr.DocumentMetadata) error {
 	if metadata == nil {
 		return errors.New("unable to update document without metadata")
 	}

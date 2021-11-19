@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-// Transactions is the interface that defines the API for creating, reading and subscribing to Nuts Network transactions.
+// Transactions is the interface that defines the API for creating, reading and subscribing to transactions.
 type Transactions interface {
 	// Subscribe makes a subscription for the specified transaction type. The receiver is called when a transaction
 	// is received for the specified type.

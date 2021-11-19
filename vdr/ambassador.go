@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/ugradid/ugradid-common/did"
-	ucrypto "github.com/ugradid/ugradid-node/crypto"
+	crypto2 "github.com/ugradid/ugradid-node/crypto"
 	"github.com/ugradid/ugradid-node/crypto/hash"
 	"github.com/ugradid/ugradid-node/network"
 	"github.com/ugradid/ugradid-node/network/dag"
@@ -73,9 +73,9 @@ func (n *ambassador) Configure() {
 // thumbprintAlg is used for creating public key thumbprints
 var thumbprintAlg = crypto.SHA256
 
-
 // callback gets called when new DIDDocuments are received by the network. All checks on the signature are already performed.
 // This method will check the integrity of the DID document related to the public key used to sign the network tr.
+// The rules are based on the Nuts RFC006
 // payload should be a json encoded did.document
 func (n *ambassador) callback(tx dag.Transaction, payload []byte) error {
 	log.Logger().Debugf("Processing DID document received from network (ref=%s)", tx.Ref())
@@ -112,7 +112,7 @@ func (n *ambassador) handleCreateDIDDocument(transaction dag.Transaction, propos
 	}
 
 	// Create key thumbprint from the transactions signingKey embedded in the header
-	signingKeyThumbprint, err := ucrypto.Thumbprint(transaction.SigningKey())
+	signingKeyThumbprint, err := crypto2.Thumbprint(transaction.SigningKey())
 	if err != nil {
 		return fmt.Errorf("unable to generate thumbprint for network transaction signing key: %w", err)
 	}
@@ -165,8 +165,7 @@ func (n *ambassador) handleUpdateDIDDocument(transaction dag.Transaction, propos
 	// In an update, only the keyID is provided in the network document. Resolve the key from the key store
 	// This should succeed since the signature of the network document has already been verified.
 	var pKey crypto.PublicKey
-
-	pKey, err = n.keyResolver.ResolvePublicKey(transaction.SigningKeyID(), transaction.Previous())
+	pKey, err = n.keyResolver.ResolvePublicKeyInTime(transaction.SigningKeyID(), &signingTime)
 
 	if err != nil {
 		return fmt.Errorf("unable to resolve signingkey: %w", err)
@@ -192,7 +191,7 @@ func (n *ambassador) handleUpdateDIDDocument(transaction dag.Transaction, propos
 
 	// check if the transactions contains all SourceTransactions
 	missedTransactions := missingTransactions(currentDIDMeta.SourceTransactions, transaction.Previous())
-	sourceTransactions := append(missedTransactions, transaction.Ref())
+	sourceTransactions := uniqueTransactions(missedTransactions, transaction.Ref())
 	if len(missedTransactions) != 0 {
 		mergedDoc, err := doc.MergeDocuments(*currentDIDDocument, proposedDIDDocument)
 		if err != nil {
@@ -237,6 +236,22 @@ func missingTransactions(current []hash.SHA256Hash, incoming []hash.SHA256Hash) 
 	return current[:j]
 }
 
+// uniqueTransactions does: Set(current + incoming).
+func uniqueTransactions(current []hash.SHA256Hash, incoming hash.SHA256Hash) []hash.SHA256Hash {
+	set := map[hash.SHA256Hash]bool{}
+	for _, h := range current {
+		set[h] = true
+	}
+	set[incoming] = true
+
+	list := make([]hash.SHA256Hash, 0)
+	for k := range set {
+		list = append(list, k)
+	}
+
+	return list
+}
+
 // checkTransactionIntegrity performs basic integrity checks on the Transaction fields
 // Some checks may look redundant because they are performed in the callers, this method has the sole
 // responsibility to ensure integrity, while the other may have not.
@@ -276,7 +291,7 @@ func (n ambassador) isUpdate(doc did.Document) (bool, error) {
 
 // findKeyByThumbprint accepts a SHA256 generated thumbprint and tries to find it in a provided list of did.VerificationRelationship s.
 // Returns an error if it could not generate a thumbprint of one of the VerificationRelationship keys
-func (n *ambassador) findKeyByThumbprint(thumbPrint []byte, didDocumentAuthKeys []did.VerificationRelationship) (jwk.Key, error) {
+func (n ambassador) findKeyByThumbprint(thumbPrint []byte, didDocumentAuthKeys []did.VerificationRelationship) (jwk.Key, error) {
 	var documentKey jwk.Key
 	for _, key := range didDocumentAuthKeys {
 		// Create thumbprint

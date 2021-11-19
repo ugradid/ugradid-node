@@ -27,6 +27,7 @@ import (
 	"time"
 )
 
+// Version defines a type for distributed transaction format version.
 type Version int
 
 const currentVersion = 1
@@ -81,8 +82,8 @@ type Signable interface {
 	SigningAlgorithm() string
 }
 
-// Referenceable contains the Ref function which allows implementors to return a unique reference
-type Referenceable interface {
+// Referencable contains the Ref function which allows implementors to return a unique reference
+type Referencable interface {
 	// Ref returns a unique sha256 hash of the implementing object.
 	Ref() hash.SHA256Hash
 }
@@ -91,10 +92,12 @@ type Referenceable interface {
 type Transaction interface {
 	UnsignedTransaction
 	Signable
-	Referenceable
+	Referencable
 	json.Marshaler
 	// Data returns the byte representation of this transaction which can be used for transport.
 	Data() []byte
+	// Clock returns the Lamport clock value
+	Clock() uint32
 }
 
 // NewTransaction creates a new unsigned transaction. Parameters payload and payloadType can't be empty, but prevs is optional.
@@ -149,9 +152,9 @@ type transaction struct {
 	signingTime      time.Time
 	signingAlgorithm jwa.SignatureAlgorithm
 	version          Version
-
-	data []byte
-	ref  hash.SHA256Hash
+	lamportClock     uint32
+	data             []byte
+	ref              hash.SHA256Hash
 }
 
 func (d transaction) MarshalJSON() ([]byte, error) {
@@ -198,14 +201,11 @@ func (d transaction) Version() Version {
 	return d.version
 }
 
+func (d transaction) Clock() uint32 {
+	return d.lamportClock
+}
+
 func (d *transaction) setData(data []byte) {
 	d.data = data
 	d.ref = hash.SHA256Sum(d.data)
 }
-
-
-
-
-
-
-

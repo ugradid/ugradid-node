@@ -16,6 +16,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.0
 	github.com/ugradid/ugradid-common v0.1.0
+	github.com/ugradid/ugradid-eibb v0.1.0
 	go.etcd.io/bbolt v1.3.6
 	google.golang.org/grpc v1.42.0
 	google.golang.org/protobuf v1.27.1
@@ -23,6 +24,8 @@ require (
 )
 
 replace github.com/ugradid/ugradid-common v0.1.0 => ../ugradid-common
+
+replace github.com/ugradid/ugradid-eibb v0.1.0 => ../ugradid-eibb
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -45,6 +48,9 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.1 // indirect
 	github.com/ockam-network/did v0.1.4-0.20210103172416-02ae01ce06d8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/tidwall/gjson v1.11.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.1 // indirect
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect

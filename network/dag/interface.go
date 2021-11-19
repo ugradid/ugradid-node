@@ -28,6 +28,7 @@ import (
 const AnyPayloadType = "*"
 
 var errRootAlreadyExists = errors.New("root transaction already exists")
+var errNoClockValue = errors.New("missing clock value")
 
 // Dag is a directed acyclic graph consisting of nodes (transactions) referring to preceding nodes.
 type Dag interface {
@@ -37,12 +38,13 @@ type Dag interface {
 	Add(ctx context.Context, transactions ...Transaction) error
 	// Walk visits every node of the DAG, starting at the given hash working its way down each level until every leaf is visited.
 	// when startAt is an empty hash, the walker starts at the root node.
-	Walk(ctx context.Context, algo WalkerAlgorithm, visitor Visitor, startAt hash.SHA256Hash) error
+	// The walker will resolve the given starting hash to a clock value.
+	// The walk will be clock based so some transactions may be revisited due to existing branches.
+	// Precautions must be taken to handle revisited transactions.
+	Walk(ctx context.Context, visitor Visitor, startAt hash.SHA256Hash) error
 	// FindBetween finds all transactions which signing time lies between startInclude and endExclusive.
 	// It returns the transactions in DAG walking order.
 	FindBetween(ctx context.Context, startInclusive time.Time, endExclusive time.Time) ([]Transaction, error)
-	// Root returns the root hash of the DAG. If there's no root an empty hash is returned. If an error occurs, it is returned.
-	Root(ctx context.Context) (hash.SHA256Hash, error)
 	// Get retrieves a specific transaction from the DAG. If it isn't found, nil is returned.
 	Get(ctx context.Context, ref hash.SHA256Hash) (Transaction, error)
 	// GetByPayloadHash retrieves all transactions that refer to the specified payload.
@@ -56,6 +58,7 @@ type Dag interface {
 	Heads(ctx context.Context) []hash.SHA256Hash
 	// Verify checks the integrity of the DAG. Should be called when it's loaded, e.g. from disk.
 	Verify(ctx context.Context) error
+	// Statistics returns data for the statistics page
 	Statistics(ctx context.Context) Statistics
 }
 
@@ -67,16 +70,6 @@ type Publisher interface {
 	Subscribe(payloadType string, receiver Receiver)
 	// Start starts the publisher.
 	Start()
-}
-
-// WalkerAlgorithm defines the interface for a type that can walk the DAG.
-type WalkerAlgorithm interface {
-	// walk visits every node of the DAG, starting at the given start node and working down each level until every leaf is visited.
-	// numberOfNodes is an indicative number of nodes that's expected to be visited. It's used for optimizing memory usage.
-	// getFn is a function for reading a transaction from the DAG using the given ref hash. If not found nil must be returned.
-	// nextsFn is a function for reading a transaction's nexts using the given ref hash. If not found nil must be returned.
-	walk(ctx context.Context, visitor Visitor, startAt hash.SHA256Hash,
-		getFn func(hash.SHA256Hash) (Transaction, error), nextsFn func(hash.SHA256Hash) ([]hash.SHA256Hash, error)) error
 }
 
 // PayloadStore defines the interface for types that store and read transaction payloads.

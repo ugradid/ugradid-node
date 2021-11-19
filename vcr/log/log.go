@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2021 ugradid community
+ * Copyright (c) 2021 ugradid community
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,13 +15,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package db
+package log
 
-import "go.etcd.io/bbolt"
+import (
+	"github.com/sirupsen/logrus"
+)
 
-type BboltDatabase interface {
-	View(f func(tx *bbolt.Tx) error) error
-	Update(fn func(*bbolt.Tx) error) error
-	Batch(func(tx *bbolt.Tx) error) error
-	Stats() bbolt.Stats
+var _logger = logrus.StandardLogger().WithField("module", "vcr")
+
+// Logger returns a logger which should be used for logging in this engine. It adds fields so
+// log entries from this engine can be recognized as such.
+func Logger() *logrus.Entry {
+	return _logger
 }

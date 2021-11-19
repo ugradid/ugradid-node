@@ -141,7 +141,7 @@ func resolveConfigFile(flags *pflag.FlagSet) string {
 	_ = k.Load(e, nil)
 
 	// load cmd flags, without a parser, no error can be returned
-	// this also loads the default flag value of nuts.yaml. So we need a way to know if it's overiden.
+	// this also loads the default flag value of ugradid.yaml. So we need a way to know if it's overiden.
 	_ = k.Load(posflag.Provider(flags, defaultDelimiter, k), nil)
 
 	return k.String(configFileFlag)

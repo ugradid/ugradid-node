@@ -28,7 +28,7 @@ import (
 	vdr "github.com/ugradid/ugradid-node/vdr/types"
 )
 
-// UgraDIDMethodName is the DID method name used by Nuts
+// UgraDIDMethodName is the DID method name used by ugra
 const UgraDIDMethodName = "ugra"
 
 // CreateDocument creates an empty DID document with baseline properties set.
@@ -38,7 +38,7 @@ func CreateDocument() did.Document {
 
 // Creator implements the DocCreator interface and can create DID Documents.
 type Creator struct {
-	// KeyStore is used for getting a fresh key and use it to generate the Nuts DID
+	// KeyStore is used for getting a fresh key and use it to generate the DID
 	KeyStore ucrypto.KeyCreator
 }
 
@@ -108,7 +108,7 @@ func getKIDName(pKey crypto.PublicKey, idFunc func(key jwk.Key) (string, error))
 var ErrInvalidOptions = errors.New("" +
 	"create request has invalid combination of options: SelfControl = true and CapabilityInvocation = false")
 
-// Create creates a Nuts DID Document with a valid DID id based on a freshly generated keypair.
+// Create creates a ugra DID Document with a valid DID id based on a freshly generated keypair.
 // The key is added to the verificationMethod list and referred to from the Authentication list
 func (n Creator) Create(options vdr.DIDCreationOptions) (*did.Document, ucrypto.Key, error) {
 	var key ucrypto.Key

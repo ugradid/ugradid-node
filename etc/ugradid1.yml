@@ -1,5 +1,7 @@
 datadir: data1
 verbosity: trace
+http:
+  address: 127.0.0.1:1233
 network:
   grpcaddr: 127.0.0.1:5556
   truststorefile: etc/truststore.pem
