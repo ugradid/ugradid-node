@@ -76,6 +76,29 @@ func (w *Wrapper) Create(ctx echo.Context) error {
 	return ctx.JSON(http.StatusOK, vcCreated)
 }
 
+// Revoke a credential
+func (w *Wrapper) Revoke(ctx echo.Context) error {
+	requestedVC := RevokeVCRequest{}
+
+	if err := ctx.Bind(&requestedVC); err != nil {
+		return err
+	}
+
+	idURI, err := ssi.ParseURI(requestedVC.Id)
+
+	// return 400 for malformed input
+	if err != nil {
+		return core.InvalidInputError("failed to parse credential ID: %w", err)
+	}
+
+	r, err := w.Vcr.Revoke(*idURI, requestedVC.CredentialType)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(http.StatusOK, r)
+}
+
 // Resolve a Verifiable credential
 func (w *Wrapper) Resolve(ctx echo.Context) error {
 	requestedVC := ResolveVCRequest{}

@@ -25,6 +25,8 @@ import (
 	"github.com/ugradid/ugradid-node/vcr/log"
 )
 
+const revocationCollection = "_revocation"
+
 func (c *vcr) StoreCredential(credential vc.VerifiableCredential) error {
 	if err := c.Verify(credential, nil); err != nil {
 		return err
@@ -53,3 +55,26 @@ func (c *vcr) writeCredential(subject vc.VerifiableCredential) error {
 
 	return nil
 }
+
+func (c *vcr) StoreRevocation(r credential.Revocation) error {
+	// verify first
+	if err := c.verifyRevocation(r); err != nil {
+		return err
+	}
+
+	return c.writeRevocation(r)
+}
+
+func (c *vcr) writeRevocation(r credential.Revocation) error {
+	collection := c.revocationIndex()
+
+	doc, _ := json.Marshal(r)
+
+	return collection.Add([]eibb.Document{eibb.DocumentFromBytes(doc)})
+}
+
+func (c *vcr) revocationIndex() eibb.Collection {
+	return c.store.Collection(revocationCollection)
+}
+
+

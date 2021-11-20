@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jws"
 	"github.com/pkg/errors"
 	ssi "github.com/ugradid/ugradid-common"
@@ -162,6 +163,182 @@ func (c *vcr) Verify(subject vc.VerifiableCredential, at *time.Time) error {
 	return c.validate(subject, at)
 }
 
+func (c *vcr) Revoke(ID ssi.URI, credentialType string) (*credential.Revocation, error) {
+	// first find it using a query on id.
+	target, err := c.find(ID, credentialType)
+	if err != nil {
+		// not found and other errors
+		return nil, err
+	}
+
+	// already revoked, return error
+	conflict, err := c.isRevoked(ID)
+	if err != nil {
+		return nil, err
+	}
+	if conflict {
+		return nil, ErrRevoked
+	}
+
+	// find issuer
+	issuer, err := did.ParseDID(target.Issuer.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract issuer: %w", err)
+	}
+
+	// find did document/metadata for originating TXs
+	doc, meta, err := c.docResolver.Resolve(*issuer, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// resolve an assertionMethod key for issuer
+	kid, err := doc2.ExtractAssertionKeyID(*doc)
+	if err != nil {
+		return nil, fmt.Errorf("invalid issuer: %w", err)
+	}
+
+	key, err := c.keyStore.Resolve(kid.String())
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve kid: %w", err)
+	}
+
+	// set defaults
+	r := credential.BuildRevocation(target)
+
+	// sign
+	if err = c.generateRevocationProof(&r, kid, key); err != nil {
+		return nil, fmt.Errorf("failed to generate revocation proof: %w", err)
+	}
+
+	// do same validation as network nodes
+	if err := credential.ValidateRevocation(r); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	payload, _ := json.Marshal(r)
+
+	_, err = c.network.CreateTransaction(revocationDocumentType, payload, key, false, r.Date, meta.SourceTransactions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish revocation: %w", err)
+	}
+
+	log.Logger().Infof("Verifiable Credential revoked (id=%s)", target.ID)
+
+	return &r, nil
+}
+
+func (c *vcr) generateRevocationProof(r *credential.Revocation, kid ssi.URI, key crypto.Key) error {
+	// create proof
+	r.Proof = &vc.JSONWebSignature2020Proof{
+		Proof: vc.Proof{
+			Type:               "JsonWebSignature2020",
+			ProofPurpose:       "assertionMethod",
+			VerificationMethod: kid,
+			Created:            r.Date,
+		},
+	}
+
+	// create correct signing challenge
+	challenge := generateRevocationChallenge(*r)
+
+	sig, err := crypto.SignJWS(challenge, detachedJWSHeaders(), key.Signer())
+	if err != nil {
+		return err
+	}
+
+	// remove payload from sig since a detached jws is required.
+	dsig := toDetachedSignature(sig)
+
+	r.Proof.Jws = dsig
+
+	return nil
+}
+
+func (c *vcr) isRevoked(ID ssi.URI) (bool, error) {
+	qp := eibb.Eq(concept.SubjectField, ID.String())
+	q := eibb.New(qp)
+
+	gIndex := c.revocationIndex()
+	docs, err := gIndex.Find(q)
+	if err != nil {
+		return false, err
+	}
+
+	if len(docs) >= 1 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (c *vcr) verifyRevocation(r credential.Revocation) error {
+	// it must have valid content
+	if err := credential.ValidateRevocation(r); err != nil {
+		return err
+	}
+
+	// issuer must be the same as vc issuer
+	subject := r.Subject
+	subject.Fragment = ""
+	if subject != r.Issuer {
+		return errors.New("issuer of revocation is not the same as issuer of credential")
+	}
+
+	// create correct challenge for verification
+	payload := generateRevocationChallenge(r)
+
+	// extract proof, can't fail, already done in generateRevocationChallenge
+	splittedJws := strings.Split(r.Proof.Jws, "..")
+	if len(splittedJws) != 2 {
+		return errors.New("invalid 'jws' value in proof")
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(splittedJws[1])
+	if err != nil {
+		return err
+	}
+
+	// check if key is of issuer
+	vm := r.Proof.VerificationMethod
+	vm.Fragment = ""
+	if vm != r.Issuer {
+		return errors.New("verification method is not of issuer")
+	}
+
+	// find key
+	pk, err := c.keyResolver.ResolveSigningKey(r.Proof.VerificationMethod.String(), &r.Date)
+	if err != nil {
+		return err
+	}
+
+	// the proof must be correct
+	verifier, _ := jws.NewVerifier(jwa.ES256)
+	// the jws lib can't do this for us, so we concat hdr with payload for verification
+	challenge := fmt.Sprintf("%s.%s", splittedJws[0], payload)
+	if err = verifier.Verify([]byte(challenge), sig, pk); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func generateRevocationChallenge(r credential.Revocation) []byte {
+	// without JWS
+	proof := r.Proof.Proof
+
+	// payload
+	r.Proof = nil
+	payload, _ := json.Marshal(r)
+
+	// proof
+	prJSON, _ := json.Marshal(proof)
+
+	sums := append(hash.SHA256Sum(prJSON).Slice(), hash.SHA256Sum(payload).Slice()...)
+	tbs := base64.RawURLEncoding.EncodeToString(sums)
+
+	return []byte(tbs)
+}
+
 func (c *vcr) validate(credential vc.VerifiableCredential, validAt *time.Time) error {
 	at := timeFunc()
 	if validAt != nil {
@@ -298,6 +475,14 @@ func (c *vcr) Resolve(ID ssi.URI, credentialType string, resolveTime *time.Time)
 }
 
 func (c *vcr) Validate(credential vc.VerifiableCredential, allowUntrusted bool, checkSignature bool, validAt *time.Time) error {
+
+	revoked, err := c.isRevoked(*credential.ID)
+	if revoked {
+		return ErrRevoked
+	}
+	if err != nil {
+		return err
+	}
 
 	if checkSignature {
 		return c.Verify(credential, validAt)

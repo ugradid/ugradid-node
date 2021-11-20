@@ -21,6 +21,7 @@ import (
 	"errors"
 	ssi "github.com/ugradid/ugradid-common"
 	"github.com/ugradid/ugradid-common/vc"
+	"github.com/ugradid/ugradid-node/vcr/credential"
 	"time"
 )
 
@@ -53,13 +54,15 @@ var revocationDocumentType = "application/vc+json;type=revocation"
 type Writer interface {
 	// StoreCredential writes a VC to storage. Before writing, it calls Verify!
 	StoreCredential(vc vc.VerifiableCredential) error
+	// StoreRevocation writes a revocation to storage.
+	StoreRevocation(r credential.Revocation) error
 }
 
 // Resolver binds all read type of operations into an interface
 type Resolver interface {
 	// Resolve returns a credential based on its ID.
 	// The optional resolveTime will resolve the credential at that point in time.
-	// The credential will still be returned in the case of ErrRevoked and ErrUntrusted.
+	// The credential will still be returned to the case of ErrRevoked and ErrUntrusted.
 	// For other errors, nil is returned
 	Resolve(ID ssi.URI, credentialType string, resolveTime *time.Time) (*vc.VerifiableCredential, error)
 }
@@ -82,6 +85,10 @@ type Vcr interface {
 	// An optional expirationDate can be given.
 	// VCs are stored when the network has successfully published them.
 	Issue(vcToIssue vc.VerifiableCredential) (*vc.VerifiableCredential, error)
+	// Revoke a credential based on its ID, the Issuer will be resolved automatically.
+	// The statusDate will be set to the current time.
+	// It returns an error if the credential, issuer or private key can not be found.
+	Revoke(ID ssi.URI, credentialType string) (*credential.Revocation, error)
 
 	Writer
 	Resolver

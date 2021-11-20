@@ -62,11 +62,26 @@ type ResolveVCRequest struct {
 	ResolveTime *string `json:"resolveTime,omitempty"`
 }
 
+// A request for issuing a revoke Verifiable Credential.
+type RevokeVCRequest struct {
+	// Credential type.
+	CredentialType string `json:"credentialType"`
+
+	// URL encoded ID.
+	Id string `json:"id"`
+}
+
+// RevokeJSONBody defines parameters for Revoke.
+type RevokeJSONBody RevokeVCRequest
+
 // CreateJSONBody defines parameters for Create.
 type CreateJSONBody IssueVCRequest
 
 // ResolveJSONBody defines parameters for Resolve.
 type ResolveJSONBody ResolveVCRequest
+
+// RevokeJSONRequestBody defines body for Revoke for application/json ContentType.
+type RevokeJSONRequestBody RevokeJSONBody
 
 // CreateJSONRequestBody defines body for Create for application/json ContentType.
 type CreateJSONRequestBody CreateJSONBody
@@ -147,6 +162,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// Revoke request with any body
+	RevokeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	Revoke(ctx context.Context, body RevokeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// Create request with any body
 	CreateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -156,6 +176,30 @@ type ClientInterface interface {
 	ResolveWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	Resolve(ctx context.Context, body ResolveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) RevokeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) Revoke(ctx context.Context, body RevokeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) CreateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -206,6 +250,46 @@ func (c *Client) Resolve(ctx context.Context, body ResolveJSONRequestBody, reqEd
 	return c.Client.Do(req)
 }
 
+// NewRevokeRequest calls the generic Revoke builder with application/json body
+func NewRevokeRequest(server string, body RevokeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRevokeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRevokeRequestWithBody generates requests for Revoke with any type of body
+func NewRevokeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/vcr/v1/vc/delete")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCreateRequest calls the generic Create builder with application/json body
 func NewCreateRequest(server string, body CreateJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -226,7 +310,7 @@ func NewCreateRequestWithBody(server string, contentType string, body io.Reader)
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/internal/vcr/v1/vc")
+	operationPath := fmt.Sprintf("/internal/vcr/v1/vc/new")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -266,7 +350,7 @@ func NewResolveRequestWithBody(server string, contentType string, body io.Reader
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/internal/vcr/v1/vc/resolve")
+	operationPath := fmt.Sprintf("/internal/vcr/v1/vc/read")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -329,6 +413,11 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// Revoke request with any body
+	RevokeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeResponse, error)
+
+	RevokeWithResponse(ctx context.Context, body RevokeJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeResponse, error)
+
 	// Create request with any body
 	CreateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateResponse, error)
 
@@ -338,6 +427,27 @@ type ClientWithResponsesInterface interface {
 	ResolveWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveResponse, error)
 
 	ResolveWithResponse(ctx context.Context, body ResolveJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveResponse, error)
+}
+
+type RevokeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type CreateResponse struct {
@@ -382,6 +492,23 @@ func (r ResolveResponse) StatusCode() int {
 	return 0
 }
 
+// RevokeWithBodyWithResponse request with arbitrary body returning *RevokeResponse
+func (c *ClientWithResponses) RevokeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevokeResponse, error) {
+	rsp, err := c.RevokeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeResponse(rsp)
+}
+
+func (c *ClientWithResponses) RevokeWithResponse(ctx context.Context, body RevokeJSONRequestBody, reqEditors ...RequestEditorFn) (*RevokeResponse, error) {
+	rsp, err := c.Revoke(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeResponse(rsp)
+}
+
 // CreateWithBodyWithResponse request with arbitrary body returning *CreateResponse
 func (c *ClientWithResponses) CreateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateResponse, error) {
 	rsp, err := c.CreateWithBody(ctx, contentType, body, reqEditors...)
@@ -414,6 +541,22 @@ func (c *ClientWithResponses) ResolveWithResponse(ctx context.Context, body Reso
 		return nil, err
 	}
 	return ParseResolveResponse(rsp)
+}
+
+// ParseRevokeResponse parses an HTTP response from a RevokeWithResponse call
+func ParseRevokeResponse(rsp *http.Response) (*RevokeResponse, error) {
+	bodyBytes, err := ioutil.ReadAll(rsp.Body)
+	defer rsp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
 }
 
 // ParseCreateResponse parses an HTTP response from a CreateWithResponse call
@@ -450,17 +593,29 @@ func ParseResolveResponse(rsp *http.Response) (*ResolveResponse, error) {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Revoke a credential
+	// (POST /internal/vcr/v1/vc/delete)
+	Revoke(ctx echo.Context) error
 	// Creates a new Verifiable Credential
-	// (POST /internal/vcr/v1/vc)
+	// (POST /internal/vcr/v1/vc/new)
 	Create(ctx echo.Context) error
 	// Resolves a verifiable credential
-	// (POST /internal/vcr/v1/vc/resolve)
+	// (POST /internal/vcr/v1/vc/read)
 	Resolve(ctx echo.Context) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler ServerInterface
+}
+
+// Revoke converts echo context to params.
+func (w *ServerInterfaceWrapper) Revoke(ctx echo.Context) error {
+	var err error
+
+	// Invoke the callback with all the unmarshalled arguments
+	err = w.Handler.Revoke(ctx)
+	return err
 }
 
 // Create converts echo context to params.
@@ -513,11 +668,15 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 
 	// PATCH: This alteration wraps the call to the implementation in a function that sets the "OperationId" context parameter,
 	// so it can be used in error reporting middleware.
-	router.Add(http.MethodPost, baseURL+"/internal/vcr/v1/vc", func(context echo.Context) error {
+	router.Add(http.MethodPost, baseURL+"/internal/vcr/v1/vc/delete", func(context echo.Context) error {
+		si.(Preprocessor).Preprocess("Revoke", context)
+		return wrapper.Revoke(context)
+	})
+	router.Add(http.MethodPost, baseURL+"/internal/vcr/v1/vc/new", func(context echo.Context) error {
 		si.(Preprocessor).Preprocess("Create", context)
 		return wrapper.Create(context)
 	})
-	router.Add(http.MethodPost, baseURL+"/internal/vcr/v1/vc/resolve", func(context echo.Context) error {
+	router.Add(http.MethodPost, baseURL+"/internal/vcr/v1/vc/read", func(context echo.Context) error {
 		si.(Preprocessor).Preprocess("Resolve", context)
 		return wrapper.Resolve(context)
 	})

@@ -8,7 +8,7 @@ info:
 servers:
   - url: http://localhost:1323
 paths:
-  /internal/vcr/v1/vc:
+  /internal/vcr/v1/vc/new:
     post:
       summary: Creates a new Verifiable Credential
       description: |
@@ -34,7 +34,7 @@ paths:
                 $ref: '#/components/schemas/VerifiableCredential'
         default:
           $ref: '../common/error_response.yaml'
-  /internal/vcr/v1/vc/resolve:
+  /internal/vcr/v1/vc/read:
     post:
       summary: "Resolves a verifiable credential"
       description: >
@@ -61,8 +61,58 @@ paths:
                 $ref: '#/components/schemas/ResolutionResult'
         default:
           $ref: '../common/error_response.yaml'
+  /internal/vcr/v1/vc/delete:
+    post:
+      summary: "Revoke a credential"
+      description: |
+        Revoke a credential.
+        error returns:
+        * 400 - Credential can't be revoked. Most likely due to a missing private key.
+        * 404 - Credential is not found
+        * 409 - Credential has already been revoked
+        * 500 - An error occurred while processing the request
+      operationId: "revoke"
+      tags:
+        - credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeVCRequest'
+      responses:
+        "200":
+          description: Revocation has been processed locally. It has also been published to the network.
+          content:
+            application/vc+json;type=revocation:
+              schema:
+                $ref: '#/components/schemas/Revocation'
+        default:
+          $ref: '../common/error_response.yaml'
 components:
   schemas:
+    Revocation:
+      type: object
+      description: Credential revocation record
+      required:
+        - issuer
+        - subject
+        - date
+      properties:
+        issuer:
+          $ref: '#/components/schemas/DID'
+        subject:
+          type: string
+          description: subject refers to the credential identifier that is revoked
+        reason:
+          type: string
+          description: reason describes why the VC has been revoked
+        date:
+          type: string
+          description: date is a rfc3339 formatted datetime.
+        proof:
+          type: object
+          description: Proof contains the cryptographic proof(s).
     ResolveVCRequest:
       type: object
       description: A request for issuing a new Verifiable Credential.
@@ -82,6 +132,21 @@ components:
           description:  a rfc3339 time string for resolving a VC at a specific moment in time.
           type: string
           example: "2012-01-02T12:00:00Z"
+    RevokeVCRequest:
+      type: object
+      description: A request for issuing a revoke Verifiable Credential.
+      required:
+        - id
+        - credentialType
+      properties:
+        id:
+          description: URL encoded ID.
+          type: string
+          example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY#90382475609238467"
+        credentialType:
+          description: Credential type.
+          type: string
+          example: "OrganizationCredential"
     ResolutionResult:
       type: object
       description: result of a Resolve operation.
