@@ -61,7 +61,7 @@ paths:
                 $ref: '#/components/schemas/ResolutionResult'
         default:
           $ref: '../common/error_response.yaml'
-  /internal/vcr/v1/vc/delete:
+  /internal/vcr/v1/vc/revoke:
     post:
       summary: "Revoke a credential"
       description: |
