@@ -1,7 +1,10 @@
 datadir: data1
 verbosity: trace
 http:
-  address: 127.0.0.1:1233
+  secret: 123456
+  default:
+    address: 127.0.0.1:1233
+    auth: token
 network:
   grpcaddr: 127.0.0.1:5556
   truststorefile: etc/truststore.pem

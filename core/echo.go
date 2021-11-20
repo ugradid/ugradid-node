@@ -19,18 +19,111 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/sirupsen/logrus"
 	"net/http"
-	"net/url"
 	"strings"
+	"sync"
 )
+
+// DefaultEchoGroup group for all access route
+const DefaultEchoGroup = ""
 
 // EchoServer implements both the EchoRouter interface and Start function
 type EchoServer interface {
 	EchoRouter
 	Start(address string) error
+}
+
+// NewMultiEcho creates a new MultiEcho which uses the given function to create EchoServers. If a route is registered
+// for an unknown group is is bound to the given defaultInterface.
+func NewMultiEcho(creatorFn func(cfg HTTPConfig) (EchoServer, error)) *MultiEcho {
+	return &MultiEcho{
+		interfaces:      map[string]EchoServer{},
+		groups:          map[string]string{},
+		groupMiddleware: map[string]echo.MiddlewareFunc{},
+		creatorFn:       creatorFn,
+	}
+}
+
+// MultiEcho allows to bind specific URLs to specific HTTP interfaces
+type MultiEcho struct {
+	interfaces      map[string]EchoServer
+	groups          map[string]string
+	groupMiddleware map[string]echo.MiddlewareFunc
+	creatorFn       func(cfg HTTPConfig) (EchoServer, error)
+}
+
+// Add adds a route to the Echo server.
+func (c *MultiEcho) Add(method, path string, handler echo.HandlerFunc, middleware ...echo.MiddlewareFunc) *echo.Route {
+
+	group := getGroup(path)
+	groupAddress := c.groups[group]
+
+	var iface EchoServer
+
+	if groupAddress != "" {
+		iface = c.interfaces[groupAddress]
+	} else {
+		iface = c.interfaces[c.groups[DefaultEchoGroup]]
+	}
+
+	return iface.Add(method, path, handler, middleware...)
+}
+
+func getGroup(path string) string {
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			return strings.ToLower(part)
+		}
+	}
+	return ""
+}
+
+// Bind binds the given group (first part of the URL) to the given HTTP interface. Calling Bind for the same group twice
+// results in an error being returned.
+func (c *MultiEcho) Bind(group string, interfaceConfig HTTPConfig) error {
+	normGroup := strings.ToLower(group)
+	if _, groupExists := c.groups[normGroup]; groupExists {
+		return fmt.Errorf("http bind group already exists: %s", group)
+	}
+	c.groups[group] = interfaceConfig.Address
+
+	if _, addressBound := c.interfaces[interfaceConfig.Address]; !addressBound {
+		server, err := c.creatorFn(interfaceConfig)
+		if err != nil {
+			return err
+		}
+		c.interfaces[interfaceConfig.Address] = server
+	}
+	return nil
+}
+
+// Start starts all Echo servers.
+func (c MultiEcho) Start() error {
+	wg := &sync.WaitGroup{}
+	wg.Add(len(c.interfaces))
+	errChan := make(chan error, len(c.interfaces))
+	for address, echoServer := range c.interfaces {
+		c.start(address, echoServer, wg, errChan)
+	}
+	wg.Wait()
+	if len(errChan) > 0 {
+		return <-errChan
+	}
+	return nil
+}
+
+func (c *MultiEcho) start(address string, server EchoServer, wg *sync.WaitGroup, errChan chan error) {
+	go func() {
+		if err := server.Start(address); err != nil {
+			errChan <- err
+		}
+		wg.Done()
+	}()
 }
 
 // EchoRouter is the interface the generated server API's will require as the Routes func argument
@@ -39,7 +132,10 @@ type EchoRouter interface {
 		middleware ...echo.MiddlewareFunc) *echo.Route
 }
 
-func CreateEchoServer(cfg HTTPConfig, strictmode bool) (*echo.Echo, error) {
+func createEchoServer(cfg HTTPConfig,
+	authenticatorProvider func(AuthType) (HTTPAuthenticator, error),
+	strictmode bool) (*echo.Echo, error) {
+
 	echoServer := echo.New()
 	echoServer.HideBanner = true
 
@@ -58,8 +154,15 @@ func CreateEchoServer(cfg HTTPConfig, strictmode bool) (*echo.Echo, error) {
 		echoServer.Use(middleware.CORSWithConfig(middleware.CORSConfig{AllowOrigins: cfg.CORS.Origin}))
 	}
 
-	// Use middleware to decode URL encoded path parameters like did%3Augra%3A123 -> did:ugra:123
-	echoServer.Use(DecodeURIPath)
+	// Configure authentication
+	auth, err := authenticatorProvider(cfg.Authentication)
+	if err != nil {
+		return nil, err
+	}
+
+	if auth != nil {
+		echoServer.Use(auth.authenticator())
+	}
 
 	echoServer.Use(loggerMiddleware(loggerConfig{Skipper: requestsStatusEndpoint, logger: Logger()}))
 
@@ -69,24 +172,6 @@ func CreateEchoServer(cfg HTTPConfig, strictmode bool) (*echo.Echo, error) {
 func requestsStatusEndpoint(context echo.Context) bool {
 	return context.Request().RequestURI == "/status"
 }
-
-// DecodeURIPath is a echo middleware that decodes path parameters
-func DecodeURIPath(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		newValues := make([]string, len(c.ParamValues()))
-		for i, value := range c.ParamValues() {
-			path, err := url.PathUnescape(value)
-			if err != nil {
-				path = value
-			}
-			newValues[i] = path
-		}
-		c.SetParamNames(c.ParamNames()...)
-		c.SetParamValues(newValues...)
-		return next(c)
-	}
-}
-
 
 var _logger = logrus.StandardLogger().WithField("module", "http-server")
 

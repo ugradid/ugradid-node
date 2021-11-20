@@ -47,12 +47,11 @@ func createRootCommand() *cobra.Command {
 }
 
 func createPrintConfigCommand(system *core.System) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Prints the current config",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Load all config and add generic options
-			cmd.PersistentFlags().AddFlagSet(core.FlagSet())
 			if err := system.Load(cmd); err != nil {
 				return err
 			}
@@ -61,6 +60,8 @@ func createPrintConfigCommand(system *core.System) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.PersistentFlags().AddFlagSet(core.FlagSet())
+	return cmd
 }
 
 func createServerCommand(system *core.System) *cobra.Command {
@@ -82,6 +83,38 @@ func createServerCommand(system *core.System) *cobra.Command {
 	return cmd
 }
 
+func createTokenCommand(system *core.System) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "token",
+		Short: "Create http authentication token",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Load all config and add generic options
+			if err := system.Load(cmd); err != nil {
+				return err
+			}
+			auth, err := core.NewTokenAuthenticator(
+				system.Config.HTTP.Secret)
+
+			if err != nil {
+				return err
+			}
+
+			token, err := auth.CreateToken()
+
+			if err != nil {
+				return err
+			}
+
+			cmd.Println("Creating HTTP authentication token")
+			cmd.Println(token)
+
+			return nil
+		},
+	}
+	cmd.PersistentFlags().AddFlagSet(core.FlagSet())
+	return cmd
+}
+
 func startServer(system *core.System) error {
 	logrus.Info("Starting server")
 
@@ -95,13 +128,25 @@ func startServer(system *core.System) error {
 		return err
 	}
 
-	// init HTTP interfaces and routes
-	echoServer, err := core.CreateEchoServer(
-		system.Config.HTTP,
-		system.Config.Strictmode)
+	authProvider := core.HTTPAuthenticatorProvider(
+		system.Config.HTTP.Secret)
 
+	// init HTTP interfaces and routes
+	echoServer := core.NewMultiEcho(func(cfg core.HTTPConfig) (core.EchoServer, error) {
+		return system.EchoCreator(cfg, authProvider, system.Config.Strictmode)
+	})
+
+	// Bind default server
+	err := echoServer.Bind(core.DefaultEchoGroup, system.Config.HTTP.HTTPConfig)
 	if err != nil {
 		return err
+	}
+
+	for httpGroup, httpConfig := range system.Config.HTTP.AltBinds {
+		logrus.Infof("Binding /%s -> %s", httpGroup, httpConfig.Address)
+		if err := echoServer.Bind(httpGroup, httpConfig); err != nil {
+			return err
+		}
 	}
 
 	for _, r := range system.Routers {
@@ -114,7 +159,7 @@ func startServer(system *core.System) error {
 		}
 	}()
 
-	if err := echoServer.Start(system.Config.HTTP.Address); err != nil {
+	if err := echoServer.Start(); err != nil {
 		return err
 	}
 	return nil
@@ -148,7 +193,7 @@ func CreateSystem() *core.System {
 
 	system.RegisterRoutes(&vdrAPI.Wrapper{VDR: vdrInstance, DocResolver: docResolver})
 
-	system.RegisterRoutes(&vcrAPI.Wrapper{ Vcr: vcrInstance})
+	system.RegisterRoutes(&vcrAPI.Wrapper{Vcr: vcrInstance})
 
 	// Register engines
 	system.RegisterEngine(vdrStoreInstance)
@@ -170,6 +215,7 @@ func CreateCommand(system *core.System) *cobra.Command {
 func addSubCommands(system *core.System, root *cobra.Command) {
 	// Register server commands
 	root.AddCommand(createServerCommand(system))
+	root.AddCommand(createTokenCommand(system))
 	root.AddCommand(createPrintConfigCommand(system))
 }
 

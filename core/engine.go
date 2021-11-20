@@ -39,6 +39,9 @@ type System struct {
 	Config *ServerConfig
 	// Routers are used to connect API handlers to the echo server
 	Routers []Routable
+	// EchoCreator is the function that's used to create the echo server/
+	EchoCreator func(cfg HTTPConfig,
+		authProvider func(AuthType) (HTTPAuthenticator, error), strictmode bool) (EchoServer, error)
 }
 
 // NewSystem creates a new, empty System.
@@ -47,6 +50,11 @@ func NewSystem() *System {
 		engines: []Engine{},
 		Config:  NewServerConfig(),
 		Routers: []Routable{},
+	}
+
+	result.EchoCreator = func(cfg HTTPConfig,
+		authProvider func(AuthType) (HTTPAuthenticator, error), strictmode bool) (EchoServer, error) {
+		return createEchoServer(cfg, authProvider, strictmode)
 	}
 	return result
 }

@@ -33,14 +33,16 @@ import (
 )
 
 const configFileFlag = "configfile"
-const serverAddressFlag = "http.address"
+const serverAddressFlag = "http.default.address"
 const datadirFlag = "datadir"
 const loggerLevelFlag = "verbosity"
-const httpCORSOriginFlag = "http.cors.origin"
+const httpCORSOriginFlag = "http.default.cors.origin"
+const httpSecretFlag = "http.secret"
 const strictModeFlag = "strictmode"
 
 const defaultHTTPInterface = ":1323"
 const defaultConfigFile = "ugradid.yaml"
+const defaultHttpSecret = ""
 const defaultStrictMode = false
 const defaultDatadir = "./data"
 const defaultLogLevel = "info"
@@ -53,8 +55,19 @@ type ServerConfig struct {
 	LoggerFormat string           `koanf:"loggerformat"`
 	Strictmode   bool             `koanf:"strictmode"`
 	Datadir      string           `koanf:"datadir"`
-	HTTP         HTTPConfig `koanf:"http"`
+	HTTP         GlobalHTTPConfig `koanf:"http"`
 	configMap    *koanf.Koanf
+}
+
+// GlobalHTTPConfig is the top-level config struct for HTTP interfaces.
+type GlobalHTTPConfig struct {
+	// Secret key for creating access token
+	Secret string `koanf:"secret"`
+	// HTTPConfig contains the config for the default HTTP interface.
+	HTTPConfig `koanf:"default"`
+	// AltBinds contains binds for alternative HTTP interfaces. The key of the map is the first part of the path
+	// of the URL (e.g. `/internal/some-api` -> `internal`), the value is the HTTP interface it must be bound to.
+	AltBinds map[string]HTTPConfig `koanf:"alt"`
 }
 
 // HTTPConfig contains configuration for an HTTP interface, e.g. address.
@@ -63,7 +76,16 @@ type HTTPConfig struct {
 	Address string `koanf:"address"`
 	// CORS holds the configuration for Cross Origin Resource Sharing.
 	CORS HTTPCORSConfig `koanf:"cors"`
+	// Authentication holds the configuration for auth http server
+	Authentication AuthType `koanf:"auth"`
 }
+
+type AuthType string
+
+const (
+	NoAuthAuthType AuthType = "no"
+	TokenAuthType  AuthType = "token"
+)
 
 // HTTPCORSConfig contains configuration for Cross Origin
 type HTTPCORSConfig struct {
@@ -84,8 +106,11 @@ func NewServerConfig() *ServerConfig {
 		LoggerFormat: defaultLoggerFormat,
 		Strictmode:   defaultStrictMode,
 		Datadir:      defaultDatadir,
-		HTTP: HTTPConfig{
-			Address: defaultHTTPInterface,
+		HTTP: GlobalHTTPConfig{
+			HTTPConfig: HTTPConfig{
+				Address: defaultHTTPInterface,
+			},
+			AltBinds: map[string]HTTPConfig{},
 		},
 	}
 }
@@ -161,6 +186,8 @@ func FlagSet() *pflag.FlagSet {
 		"When set, insecure settings are forbidden.")
 	flagSet.String(datadirFlag, defaultDatadir,
 		"Directory where the node stores its files.")
+	flagSet.String(httpSecretFlag, defaultHttpSecret,
+		"Http secret of authentication")
 	flagSet.StringSlice(httpCORSOriginFlag, nil,
 		"When set, enables CORS from the specified origins for the on default HTTP interface.")
 
