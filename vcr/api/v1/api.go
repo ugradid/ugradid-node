@@ -23,6 +23,7 @@ import (
 	"github.com/ugradid/ugradid-node/core"
 	"github.com/ugradid/ugradid-node/vcr"
 	"github.com/ugradid/ugradid-node/vcr/credential"
+	"github.com/ugradid/ugradid-node/vcr/schema"
 	"github.com/ugradid/ugradid-node/vdr/types"
 	"net/http"
 	"time"
@@ -39,12 +40,15 @@ type Wrapper struct {
 // ResolveStatusCode maps errors returned by this API to specific HTTP status codes.
 func (w *Wrapper) ResolveStatusCode(err error) int {
 	return core.ResolveStatusCode(err, map[error]int{
-		vcr.ErrNotFound:          http.StatusNotFound,
-		vcr.ErrRevoked:           http.StatusConflict,
-		credential.ErrValidation: http.StatusBadRequest,
-		types.ErrNotFound:        http.StatusBadRequest,
-		types.ErrKeyNotFound:     http.StatusBadRequest,
-		vcr.ErrInvalidCredential: http.StatusNotFound,
+		vcr.ErrNotFoundCredential:       http.StatusNotFound,
+		vcr.ErrNotFoundSchema:           http.StatusNotFound,
+		vcr.ErrRevoked:                  http.StatusConflict,
+		credential.ErrValidation:        http.StatusBadRequest,
+		credential.ErrResolveCredential: http.StatusBadRequest,
+		schema.ErrValidation:            http.StatusBadRequest,
+		types.ErrNotFound:               http.StatusBadRequest,
+		types.ErrKeyNotFound:            http.StatusBadRequest,
+		vcr.ErrInvalidCredential:        http.StatusNotFound,
 	})
 }
 
@@ -60,8 +64,23 @@ func (w *Wrapper) Routes(router core.EchoRouter) {
 	RegisterHandlers(router, w)
 }
 
-// Create a Verifiable credential
 func (w *Wrapper) Create(ctx echo.Context) error {
+	requestSchema := CreateSchemaRequest{}
+
+	if err := ctx.Bind(&requestSchema); err != nil {
+		return err
+	}
+
+	vcCreated, err := w.Vcr.Create(requestSchema)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(http.StatusOK, vcCreated)
+}
+
+// Issue a Verifiable credential
+func (w *Wrapper) Issue(ctx echo.Context) error {
 	requestedVC := IssueVCRequest{}
 
 	if err := ctx.Bind(&requestedVC); err != nil {

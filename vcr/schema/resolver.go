@@ -15,27 +15,18 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package v1
+package schema
 
 import (
-	"github.com/ugradid/ugradid-common/vc"
+	"fmt"
 	"github.com/ugradid/ugradid-common/vc/schema"
 )
 
-// VerifiableCredential is an alias to use from within the API
-type VerifiableCredential = vc.VerifiableCredential
-
-// CredentialSubject is an alias to use from within the API
-type CredentialSubject = interface{}
-
-// IssueVCRequest is an alias to use from within the API for issuing VCs.
-type IssueVCRequest = vc.VerifiableCredential
-
-// CreateSchemaRequest isa an alias
-type CreateSchemaRequest = schema.Schema
-
-// Schema isa an alias
-type Schema = schema.Schema
-
-// JsonSchema is an alias
-type JsonSchema =schema.JsonSchema
+func FindValidator(sc schema.JsonSchema) (Validator, error) {
+	switch sc.SchemaRef {
+	case schema.Draft7Schema:
+		return JsonSchemaValidator{}, nil
+	default:
+		return nil, fmt.Errorf("schema '%s' is not supported", sc.SchemaRef)
+	}
+}

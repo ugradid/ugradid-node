@@ -40,9 +40,6 @@ const payloadIndexBucket = "payloadIndex"
 // refs. The value ([]byte) should be split in chunks of HashSize where each entry is a forward reference (next).
 const nextsBucket = "nexts"
 
-// rootsTransactionKey is the name of the bucket entry that holds the refs of the root transactions.
-const rootsTransactionKey = "roots"
-
 // headsBucket contains the name of the bucket the holds the heads.
 const headsBucket = "heads"
 

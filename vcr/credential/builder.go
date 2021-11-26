@@ -18,7 +18,7 @@
 package credential
 
 import (
-	"fmt"
+	"errors"
 	"github.com/google/uuid"
 	ssi "github.com/ugradid/ugradid-common"
 	"github.com/ugradid/ugradid-common/vc"
@@ -28,15 +28,17 @@ import (
 // Builder is an abstraction for extending a partial VC into a fully valid VC
 type Builder interface {
 	// Fill sets the defaults for common fields
-	Fill(vc *vc.VerifiableCredential)
+	Fill(vc *vc.VerifiableCredential) error
 }
 
 // defaultBuilder fills in the type, issuanceDate and context
-type defaultBuilder struct {}
+type schemaCredentialBuilder struct {
+	vcType string
+}
 
 var nowFunc = time.Now
 
-func (d defaultBuilder) Fill(credential *vc.VerifiableCredential) {
+func FillCredential(credential *vc.VerifiableCredential, vcType string) error {
 	credential.Context = []ssi.URI{vc.VCContextV1URI(), *UgraContextURI}
 
 	defaultType := vc.VerifiableCredentialTypeV1URI()
@@ -44,14 +46,37 @@ func (d defaultBuilder) Fill(credential *vc.VerifiableCredential) {
 		credential.Type = append(credential.Type, defaultType)
 	}
 
-	credential.IssuanceDate = nowFunc()
-	credential.ID = generateID(credential.Issuer)
+	builderType, _ := ssi.ParseURI(vcType)
+	if !credential.IsType(*builderType) {
+		credential.Type = append(credential.Type, *builderType)
+	}
 
-	return
+	credential.IssuanceDate = nowFunc()
+
+	id := vc.GenerateCredentialID(credential.Issuer, uuid.New().String())
+
+	credentialId, err := ssi.ParseURI(id)
+
+	if err != nil {
+		return errors.New("failed generate credential id")
+	}
+
+	credential.ID = credentialId
+
+	return nil
 }
 
-func generateID(issuer ssi.URI) *ssi.URI {
-	id := fmt.Sprintf("%s#%s", issuer.String(), uuid.New().String())
-	u, _ := ssi.ParseURI(id)
-	return u
+func (d schemaCredentialBuilder) Fill(credential *vc.VerifiableCredential) error {
+	if err := d.fillCredentialSchema(credential.CredentialSchema); err != nil {
+		return err
+	}
+	return FillCredential(credential, d.vcType)
+}
+
+func (d schemaCredentialBuilder) fillCredentialSchema(schema *vc.CredentialSchema) error {
+	if schema == nil {
+		return errors.New("credential schema is required")
+	}
+	schema.Type = ssi.JsonSchemaValidator2018
+	return nil
 }

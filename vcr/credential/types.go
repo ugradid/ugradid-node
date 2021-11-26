@@ -21,11 +21,10 @@ import ssi "github.com/ugradid/ugradid-common"
 
 const (
 	// UgraContext is the ugra specific json-ld context
-	UgraContext = "https://ugradid.ru/credentials/v1"
+	UgraContext = "https://ugradid.ru/docs/credentials/v1"
 )
 
 var (
-	// UgraContextURI is the  specific json-ld context as URI
+	// UgraContextURI is the ugra specific json-ld context as URI
 	UgraContextURI, _ = ssi.ParseURI(UgraContext)
 )
-

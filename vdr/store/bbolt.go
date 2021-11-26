@@ -56,7 +56,7 @@ func DefaultVdrStoreConfig() Config {
 
 var (
 	documentsBucket = []byte("documents")
-	versionsBucket  = []byte("document_versions")
+	versionsBucket  = []byte("documentVersions")
 )
 
 type VdrStore struct {

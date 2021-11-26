@@ -65,7 +65,7 @@ func NewAmbassador(networkClient network.Transactions, didStore types.Store) Amb
 	}
 }
 
-// Configure instructs the ambassador to start receiving DID Documents from the network.
+// Configure instructs the ambassador to start receiving DID Document from the network.
 func (n *ambassador) Configure() {
 	n.networkClient.Subscribe(didDocumentType, n.callback)
 }
@@ -75,7 +75,6 @@ var thumbprintAlg = crypto.SHA256
 
 // callback gets called when new DIDDocuments are received by the network. All checks on the signature are already performed.
 // This method will check the integrity of the DID document related to the public key used to sign the network tr.
-// The rules are based on the Nuts RFC006
 // payload should be a json encoded did.document
 func (n *ambassador) callback(tx dag.Transaction, payload []byte) error {
 	log.Logger().Debugf("Processing DID document received from network (ref=%s)", tx.Ref())

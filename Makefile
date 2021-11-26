@@ -14,7 +14,7 @@ gen-protobuf: # Init Service
 gen-api:
 	oapi-codegen -generate types,server,client -templates codegen/oapi/ -package v1 docs/static/network/v1.yaml | gofmt > network/api/v1/generated.go
 	oapi-codegen -generate types,server,client,skip-prune -templates codegen/oapi/ -package v1 -exclude-schemas DIDDocument,DIDDocumentMetadata,Service,VerificationMethod docs/static/vdr/v1.yaml | gofmt > vdr/api/v1/generated.go
-	oapi-codegen -generate types,server,client,skip-prune -templates codegen/oapi/ -package v1 -exclude-schemas VerifiableCredential,CredentialSubject,IssueVCRequest,Revocation docs/static/vcr/v1.yaml | gofmt > vcr/api/v1/generated.go
+	oapi-codegen -generate types,server,client,skip-prune -templates codegen/oapi/ -package v1 -exclude-schemas VerifiableCredential,CredentialSubject,IssueVCRequest,Revocation,Schema,CreateSchemaRequest,JsonSchema docs/static/vcr/v1.yaml | gofmt > vcr/api/v1/generated.go
 
 run: # Run develop server
 	@go run $(MAIN_FILE) server --configfile etc/ugradid.yml

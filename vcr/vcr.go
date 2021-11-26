@@ -32,9 +32,9 @@ import (
 	"github.com/ugradid/ugradid-node/crypto"
 	"github.com/ugradid/ugradid-node/crypto/hash"
 	"github.com/ugradid/ugradid-node/network"
-	"github.com/ugradid/ugradid-node/vcr/concept"
 	"github.com/ugradid/ugradid-node/vcr/credential"
 	"github.com/ugradid/ugradid-node/vcr/log"
+	"github.com/ugradid/ugradid-node/vcr/trust"
 	doc2 "github.com/ugradid/ugradid-node/vdr/doc"
 	vdr "github.com/ugradid/ugradid-node/vdr/types"
 	"path"
@@ -57,6 +57,7 @@ type vcr struct {
 	keyResolver vdr.KeyResolver
 	ambassador  Ambassador
 	network     network.Transactions
+	trustConfig *trust.Config
 }
 
 // NewVCRInstance creates a new vcr instance with default config and empty concept registry
@@ -79,10 +80,15 @@ func NewVCRInstance(keyStore crypto.KeyStore, docResolver vdr.DocResolver,
 func (c *vcr) Configure(config core.ServerConfig) error {
 	var err error
 
-	// store strictMode
-	c.config = Config{strictMode: config.Strictmode}
+	fsPath := path.Join(config.Datadir, "vcr", c.config.File)
+	tcPath := path.Join(config.Datadir, "vcr", c.config.TrustedFile)
 
-	fsPath := path.Join(config.Datadir, "vcr", "credentials.db")
+	// load trusted issuers
+	c.trustConfig = trust.NewConfig(tcPath)
+
+	if err = c.trustConfig.Load(); err != nil {
+		return err
+	}
 
 	// setup DB connection
 	if c.store, err = eibb.NewStore(fsPath, noSync); err != nil {
@@ -105,9 +111,9 @@ func (c *vcr) Config() interface{} {
 
 func (c *vcr) Verify(subject vc.VerifiableCredential, at *time.Time) error {
 	// it must have valid content
-	validator, _ := credential.FindValidatorAndBuilder(subject)
-	if validator == nil {
-		return errors.New("unknown credential type")
+	validator, _, err := credential.FindValidatorAndBuilder(subject)
+	if err != nil {
+		return err
 	}
 
 	if err := validator.Validate(subject); err != nil {
@@ -123,7 +129,21 @@ func (c *vcr) Verify(subject vc.VerifiableCredential, at *time.Time) error {
 	// extract proof, can't fail already done in generateCredentialChallenge
 	var proofs = make([]vc.JSONWebSignature2020Proof, 0)
 	_ = subject.UnmarshalProofValue(&proofs)
-	proof := proofs[0]
+
+	proof := &proofs[0]
+
+	if err = c.verifyProof(payload, subject.Issuer, proof, at); err != nil {
+		return err
+	}
+
+	// next check trusted/period and revocation
+	return c.validate(subject, at)
+}
+
+func (c *vcr) verifyProof(payload []byte, issuer ssi.URI,
+	proof *vc.JSONWebSignature2020Proof, at *time.Time) error {
+
+	// extract proof, can't fail, already done in generateRevocationChallenge
 	splittedJws := strings.Split(proof.Jws, "..")
 	if len(splittedJws) != 2 {
 		return errors.New("invalid 'jws' value in proof")
@@ -136,177 +156,12 @@ func (c *vcr) Verify(subject vc.VerifiableCredential, at *time.Time) error {
 	// check if key is of issuer
 	vm := proof.VerificationMethod
 	vm.Fragment = ""
-	if vm != subject.Issuer {
+	if vm != issuer {
 		return errors.New("verification method is not of issuer")
 	}
 
 	// find key
 	pk, err := c.keyResolver.ResolveSigningKey(proof.VerificationMethod.String(), at)
-	if err != nil {
-		return err
-	}
-
-	// the proof must be correct
-	alg, err := crypto.SignatureAlgorithm(pk)
-	if err != nil {
-		return err
-	}
-
-	verifier, _ := jws.NewVerifier(alg)
-	// the jws lib can't do this for us, so we concat hdr with payload for verification
-	challenge := fmt.Sprintf("%s.%s", splittedJws[0], payload)
-	if err = verifier.Verify([]byte(challenge), sig, pk); err != nil {
-		return err
-	}
-
-	// next check trusted/period and revocation
-	return c.validate(subject, at)
-}
-
-func (c *vcr) Revoke(ID ssi.URI, credentialType string) (*credential.Revocation, error) {
-	// first find it using a query on id.
-	target, err := c.find(ID, credentialType)
-	if err != nil {
-		// not found and other errors
-		return nil, err
-	}
-
-	// already revoked, return error
-	conflict, err := c.isRevoked(ID)
-	if err != nil {
-		return nil, err
-	}
-	if conflict {
-		return nil, ErrRevoked
-	}
-
-	// find issuer
-	issuer, err := did.ParseDID(target.Issuer.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract issuer: %w", err)
-	}
-
-	// find did document/metadata for originating TXs
-	doc, meta, err := c.docResolver.Resolve(*issuer, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// resolve an assertionMethod key for issuer
-	kid, err := doc2.ExtractAssertionKeyID(*doc)
-	if err != nil {
-		return nil, fmt.Errorf("invalid issuer: %w", err)
-	}
-
-	key, err := c.keyStore.Resolve(kid.String())
-	if err != nil {
-		return nil, fmt.Errorf("could not resolve kid: %w", err)
-	}
-
-	// set defaults
-	r := credential.BuildRevocation(target)
-
-	// sign
-	if err = c.generateRevocationProof(&r, kid, key); err != nil {
-		return nil, fmt.Errorf("failed to generate revocation proof: %w", err)
-	}
-
-	// do same validation as network nodes
-	if err := credential.ValidateRevocation(r); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
-	}
-
-	payload, _ := json.Marshal(r)
-
-	_, err = c.network.CreateTransaction(revocationDocumentType, payload, key, false, r.Date, meta.SourceTransactions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to publish revocation: %w", err)
-	}
-
-	log.Logger().Infof("Verifiable Credential revoked (id=%s)", target.ID)
-
-	return &r, nil
-}
-
-func (c *vcr) generateRevocationProof(r *credential.Revocation, kid ssi.URI, key crypto.Key) error {
-	// create proof
-	r.Proof = &vc.JSONWebSignature2020Proof{
-		Proof: vc.Proof{
-			Type:               "JsonWebSignature2020",
-			ProofPurpose:       "assertionMethod",
-			VerificationMethod: kid,
-			Created:            r.Date,
-		},
-	}
-
-	// create correct signing challenge
-	challenge := generateRevocationChallenge(*r)
-
-	sig, err := crypto.SignJWS(challenge, detachedJWSHeaders(), key.Signer())
-	if err != nil {
-		return err
-	}
-
-	// remove payload from sig since a detached jws is required.
-	dsig := toDetachedSignature(sig)
-
-	r.Proof.Jws = dsig
-
-	return nil
-}
-
-func (c *vcr) isRevoked(ID ssi.URI) (bool, error) {
-	qp := eibb.Eq(concept.SubjectField, ID.String())
-	q := eibb.New(qp)
-
-	gIndex := c.revocationIndex()
-	docs, err := gIndex.Find(q)
-	if err != nil {
-		return false, err
-	}
-
-	if len(docs) >= 1 {
-		return true, nil
-	}
-
-	return false, nil
-}
-
-func (c *vcr) verifyRevocation(r credential.Revocation) error {
-	// it must have valid content
-	if err := credential.ValidateRevocation(r); err != nil {
-		return err
-	}
-
-	// issuer must be the same as vc issuer
-	subject := r.Subject
-	subject.Fragment = ""
-	if subject != r.Issuer {
-		return errors.New("issuer of revocation is not the same as issuer of credential")
-	}
-
-	// create correct challenge for verification
-	payload := generateRevocationChallenge(r)
-
-	// extract proof, can't fail, already done in generateRevocationChallenge
-	splittedJws := strings.Split(r.Proof.Jws, "..")
-	if len(splittedJws) != 2 {
-		return errors.New("invalid 'jws' value in proof")
-	}
-	sig, err := base64.RawURLEncoding.DecodeString(splittedJws[1])
-	if err != nil {
-		return err
-	}
-
-	// check if key is of issuer
-	vm := r.Proof.VerificationMethod
-	vm.Fragment = ""
-	if vm != r.Issuer {
-		return errors.New("verification method is not of issuer")
-	}
-
-	// find key
-	pk, err := c.keyResolver.ResolveSigningKey(r.Proof.VerificationMethod.String(), &r.Date)
 	if err != nil {
 		return err
 	}
@@ -320,23 +175,6 @@ func (c *vcr) verifyRevocation(r credential.Revocation) error {
 	}
 
 	return nil
-}
-
-func generateRevocationChallenge(r credential.Revocation) []byte {
-	// without JWS
-	proof := r.Proof.Proof
-
-	// payload
-	r.Proof = nil
-	payload, _ := json.Marshal(r)
-
-	// proof
-	prJSON, _ := json.Marshal(proof)
-
-	sums := append(hash.SHA256Sum(prJSON).Slice(), hash.SHA256Sum(payload).Slice()...)
-	tbs := base64.RawURLEncoding.EncodeToString(sums)
-
-	return []byte(tbs)
 }
 
 func (c *vcr) validate(credential vc.VerifiableCredential, validAt *time.Time) error {
@@ -362,49 +200,28 @@ func (c *vcr) validate(credential vc.VerifiableCredential, validAt *time.Time) e
 	return err
 }
 
-func generateCredentialChallenge(credential vc.VerifiableCredential) ([]byte, error) {
-	var proofs = make([]vc.JSONWebSignature2020Proof, 1)
-
-	if err := credential.UnmarshalProofValue(&proofs); err != nil {
-		return nil, err
-	}
-
-	if len(proofs) != 1 {
-		return nil, errors.New("expected a single Proof for challenge generation")
-	}
-
-	// payload
-	credential.Proof = nil
-	payload, _ := json.Marshal(credential)
-
-	// proof
-	proof := proofs[0]
-	proof.Jws = ""
-	prJSON, _ := json.Marshal(proof)
-
-	sums := append(hash.SHA256Sum(prJSON).Slice(), hash.SHA256Sum(payload).Slice()...)
-	tbs := base64.RawURLEncoding.EncodeToString(sums)
-
-	return []byte(tbs), nil
-}
-
 func (c *vcr) Issue(template vc.VerifiableCredential) (*vc.VerifiableCredential, error) {
 
 	if len(template.Type) != 1 {
 		return nil, errors.New("can only issue credential with 1 type")
 	}
 
-	validator, builder := credential.FindValidatorAndBuilder(template)
+	validator, builder, err := credential.FindValidatorAndBuilder(template)
 
-	credential := vc.VerifiableCredential{
+	if err != nil {
+		return nil, err
+	}
+
+	cred := vc.VerifiableCredential{
 		Type:              template.Type,
 		CredentialSubject: template.CredentialSubject,
 		Issuer:            template.Issuer,
 		ExpirationDate:    template.ExpirationDate,
+		CredentialSchema:  template.CredentialSchema,
 	}
 
 	// find issuer
-	issuer, err := did.ParseDID(credential.Issuer.String())
+	issuer, err := did.ParseDID(cred.Issuer.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse issuer: %w", err)
 	}
@@ -426,36 +243,50 @@ func (c *vcr) Issue(template vc.VerifiableCredential) (*vc.VerifiableCredential,
 	}
 
 	// set defaults
-	builder.Fill(&credential)
+	if err := builder.Fill(&cred); err != nil {
+		return nil, fmt.Errorf("failed fill credential: %w", err)
+	}
 
 	// sign
-	if err := c.generateProof(&credential, kid, key); err != nil {
+	if err := c.generateProof(&cred, kid, key); err != nil {
 		return nil, fmt.Errorf("failed to generate credential proof: %w", err)
 	}
 
 	// do same validation as network nodes
-	if err := validator.Validate(credential); err != nil {
+	if err := validator.Validate(cred); err != nil {
 		return nil, err
 	}
 
-	payload, _ := json.Marshal(credential)
+	if cred.CredentialSchema != nil {
+		sc, err := c.GetSchema(cred.CredentialSchema.ID)
+
+		if err != nil {
+			return nil, fmt.Errorf("credential subject: %s", err)
+		}
+
+		if err := credential.ValidateCredential(sc, cred); err != nil {
+			return nil, fmt.Errorf("credential subject is not valid schema: %s", err)
+		}
+	}
+
+	payload, _ := json.Marshal(cred)
 
 	_, err = c.network.CreateTransaction(
-		vcDocumentType, payload, key, false, credential.IssuanceDate, meta.SourceTransactions)
+		vcDocumentType, payload, key, false, cred.IssuanceDate, meta.SourceTransactions)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish credential: %w", err)
 	}
 
 	log.Logger().Infof(
-		"Verifiable Credential issued (id=%s,type=%s)", credential.ID, template.Type)
+		"Verifiable Credential issued (id=%s,type=%s)", cred.ID, template.Type)
 
-	return &credential, nil
+	return &cred, nil
 }
 
 func (c *vcr) Resolve(ID ssi.URI, credentialType string, resolveTime *time.Time) (*vc.VerifiableCredential, error) {
 
-	credential, err := c.find(ID, credentialType)
+	credential, err := c.GetCredential(ID, credentialType)
 	if err != nil {
 		return nil, err
 	}
@@ -484,34 +315,27 @@ func (c *vcr) Validate(credential vc.VerifiableCredential, allowUntrusted bool, 
 		return err
 	}
 
+	if !allowUntrusted {
+		trusted := c.isTrusted(credential)
+		if !trusted {
+			return ErrUntrusted
+		}
+	}
+
 	if checkSignature {
 		return c.Verify(credential, validAt)
 	}
 	return c.validate(credential, validAt)
 }
 
-// find only returns a VC from storage, it does not tell anything about validity
-func (c *vcr) find(ID ssi.URI, credentialType string) (vc.VerifiableCredential, error) {
-	credential := vc.VerifiableCredential{}
-
-	qp := eibb.Eq(concept.IDField, ID.String())
-	q := eibb.New(qp)
-
-	docs, err := c.store.Collection(credentialType).Find(q)
-	if err != nil {
-		return credential, err
-	}
-	if len(docs) > 0 {
-		// there can be only one
-		err = json.Unmarshal(docs[0].Bytes(), &credential)
-		if err != nil {
-			return credential, errors.Wrap(err, "unable to parse credential from db")
+func (c *vcr) isTrusted(credential vc.VerifiableCredential) bool {
+	for _, t := range credential.Type {
+		if c.trustConfig.IsTrusted(t, credential.Issuer) {
+			return true
 		}
-
-		return credential, nil
 	}
 
-	return credential, ErrNotFound
+	return false
 }
 
 func (c *vcr) generateProof(credential *vc.VerifiableCredential, kid ssi.URI, key crypto.Key) error {
@@ -546,6 +370,32 @@ func (c *vcr) generateProof(credential *vc.VerifiableCredential, kid ssi.URI, ke
 	}
 
 	return nil
+}
+
+func generateCredentialChallenge(credential vc.VerifiableCredential) ([]byte, error) {
+	var proofs = make([]vc.JSONWebSignature2020Proof, 1)
+
+	if err := credential.UnmarshalProofValue(&proofs); err != nil {
+		return nil, err
+	}
+
+	if len(proofs) != 1 {
+		return nil, errors.New("expected a single Proof for challenge generation")
+	}
+
+	// payload
+	credential.Proof = nil
+	payload, _ := json.Marshal(credential)
+
+	// proof
+	proof := proofs[0]
+	proof.Jws = ""
+	prJSON, _ := json.Marshal(proof)
+
+	sums := append(hash.SHA256Sum(prJSON).Slice(), hash.SHA256Sum(payload).Slice()...)
+	tbs := base64.RawURLEncoding.EncodeToString(sums)
+
+	return []byte(tbs), nil
 }
 
 // detachedJWSHeaders creates headers for JsonWebSignature2020

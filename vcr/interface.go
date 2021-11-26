@@ -21,6 +21,7 @@ import (
 	"errors"
 	ssi "github.com/ugradid/ugradid-common"
 	"github.com/ugradid/ugradid-common/vc"
+	"github.com/ugradid/ugradid-common/vc/schema"
 	"github.com/ugradid/ugradid-node/vcr/credential"
 	"time"
 )
@@ -31,8 +32,11 @@ var ErrInvalidIssuer = errors.New("invalid credential issuer")
 // ErrInvalidSubject is returned when a credential is issued to a DID that is unknown or revoked.
 var ErrInvalidSubject = errors.New("invalid credential subject")
 
-// ErrNotFound is returned when a credential can not be found based on its ID.
-var ErrNotFound = errors.New("credential not found")
+// ErrNotFoundCredential is returned when a credential can not be found based on its ID.
+var ErrNotFoundCredential = errors.New("credential not found")
+
+// ErrNotFoundSchema is returned when a schema can not be found based on its ID.
+var ErrNotFoundSchema = errors.New("schema not found")
 
 // ErrRevoked is returned when a credential has been revoked and the required action requires it to not be revoked.
 var ErrRevoked = errors.New("credential is revoked")
@@ -50,12 +54,26 @@ var vcDocumentType = "application/vc+json"
 
 var revocationDocumentType = "application/vc+json;type=revocation"
 
+var schemaDocumentType = "application/vc+json;type=schema"
+
 // Writer is the interface that groups al the VC write methods
 type Writer interface {
 	// StoreCredential writes a VC to storage. Before writing, it calls Verify!
 	StoreCredential(vc vc.VerifiableCredential) error
 	// StoreRevocation writes a revocation to storage.
 	StoreRevocation(r credential.Revocation) error
+	// StoreSchema writes a credential schema to storage
+	StoreSchema(s schema.Schema) error
+}
+
+// Reader is the interface that groups al the VC write methods
+type Reader interface {
+	// GetCredential read a VC from storage
+	GetCredential(ID ssi.URI, credentialType string) (vc.VerifiableCredential, error)
+	// isRevoked check revoke vc from storage
+	isRevoked(ID ssi.URI) (bool, error)
+	// GetSchema read a vc schema from storage
+	GetSchema(ID ssi.URI) (schema.Schema, error)
 }
 
 // Resolver binds all read type of operations into an interface
@@ -79,6 +97,16 @@ type Validator interface {
 	Validate(credential vc.VerifiableCredential, allowUntrusted bool, checkSignature bool, validAt *time.Time) error
 }
 
+// TrustManager bundles all trust related methods in one interface
+type TrustManager interface {
+}
+
+// SchemaManager combines all methods for working with schema
+type SchemaManager interface {
+	// Create new schema and publish
+	Create(s schema.Schema) (*schema.Schema, error)
+}
+
 // Vcr is the interface that covers all functionality of the vcr store.
 type Vcr interface {
 	// Issue creates and publishes a new VC.
@@ -91,6 +119,9 @@ type Vcr interface {
 	Revoke(ID ssi.URI, credentialType string) (*credential.Revocation, error)
 
 	Writer
+	Reader
 	Resolver
 	Validator
+	TrustManager
+	SchemaManager
 }

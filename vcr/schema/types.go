@@ -15,27 +15,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package v1
+package schema
 
-import (
-	"github.com/ugradid/ugradid-common/vc"
-	"github.com/ugradid/ugradid-common/vc/schema"
+import ssi "github.com/ugradid/ugradid-common"
+
+const (
+	// UgraSchemaType is the ugra specific json-ld context
+	UgraSchemaType = "https://ugradid.ru/docs/credentials/schema/v1"
 )
 
-// VerifiableCredential is an alias to use from within the API
-type VerifiableCredential = vc.VerifiableCredential
-
-// CredentialSubject is an alias to use from within the API
-type CredentialSubject = interface{}
-
-// IssueVCRequest is an alias to use from within the API for issuing VCs.
-type IssueVCRequest = vc.VerifiableCredential
-
-// CreateSchemaRequest isa an alias
-type CreateSchemaRequest = schema.Schema
-
-// Schema isa an alias
-type Schema = schema.Schema
-
-// JsonSchema is an alias
-type JsonSchema =schema.JsonSchema
+var (
+	// UgraSchemaTypeURI is the ugra specific json-ld context as URI
+	UgraSchemaTypeURI, _ = ssi.ParseURI(UgraSchemaType)
+)

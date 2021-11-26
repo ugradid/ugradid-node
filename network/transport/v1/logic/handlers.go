@@ -172,8 +172,6 @@ func (p *protocol) handleTransactionPayloadQuery(peer transport.PeerId, query *p
 }
 
 func (p *protocol) handleTransactionList(peer transport.PeerId, transactionList *protobuf.TransactionList) error {
-	// TODO: Only process transaction list if we actually queried it (but be aware of pagination)
-	// TODO: Do something with blockDate
 	log.Logger().Tracef("Received transaction list from peer (peer=%s)", peer)
 	ctx := context.Background()
 	transactions := transactionList.Transactions
@@ -211,7 +209,6 @@ func (p *protocol) handleTransactionList(peer transport.PeerId, transactionList 
 // checkTransactionOnLocalNode checks whether the given transaction is present on the local node, adds it if not and/or queries
 // the payload if it (the payload) it not present. If we have both transaction and payload, nothing is done.
 func (p *protocol) checkTransactionOnLocalNode(ctx context.Context, peer transport.PeerId, transactionRef hash.SHA256Hash, data []byte) error {
-	// TODO: Make this a bit smarter.
 	var transaction dag.Transaction
 	var err error
 	if transaction, err = dag.ParseTransaction(data); err != nil {
@@ -231,8 +228,6 @@ func (p *protocol) checkTransactionOnLocalNode(ctx context.Context, peer transpo
 		queryContents = !payloadPresent
 	}
 	if queryContents {
-		// TODO: Currently we send the query to the peer that sent us the hash, but this peer might not have the
-		//   transaction contents. We need a smarter way to get it from a peer who does.
 		log.Logger().Infof("Received transaction hash from peer that we don't have yet or we're missing its contents, will query it (peer=%s,hash=%s)", peer, transactionRef)
 		p.sender.sendTransactionPayloadQuery(peer, transaction.PayloadHash())
 	}

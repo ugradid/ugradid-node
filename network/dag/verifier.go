@@ -37,7 +37,7 @@ type Verifier func(ctx context.Context, tx Transaction, graph Dag) error
 
 // NewTransactionSignatureVerifier creates a transaction verifier that checks the signature of the transaction.
 // It uses the given KeyResolver to resolves keys that aren't embedded in the transaction.
-func NewTransactionSignatureVerifier(resolver types.KeyResolver) Verifier {
+func NewTransactionSignatureVerifier(resolver types.KeyResolver, payload PayloadStore) Verifier {
 	return func(ctx context.Context, tx Transaction, dag Dag) error {
 		var signingKey crypto.PublicKey
 		if tx.SigningKey() != nil {
@@ -45,6 +45,20 @@ func NewTransactionSignatureVerifier(resolver types.KeyResolver) Verifier {
 				return err
 			}
 		} else {
+			st := false
+			for _, prev := range tx.Previous() {
+				present, err := payload.IsPresent(ctx, prev)
+				if err != types.ErrNotFound {
+					return err
+				}
+				if !present {
+					st = true
+				}
+			}
+			if st {
+				return ErrPreviousTransactionMissing
+			}
+
 			pk, err := resolver.ResolvePublicKey(tx.SigningKeyID(), tx.Previous())
 			if err != nil {
 				return fmt.Errorf("unable to verify transaction signature, can't resolve key by TX ref (kid=%s, tx=%s): %w", tx.SigningKeyID(), tx.Ref().String(), err)

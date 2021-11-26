@@ -21,8 +21,10 @@ import (
 	"encoding/json"
 	"github.com/pkg/errors"
 	"github.com/ugradid/ugradid-common/vc"
+	"github.com/ugradid/ugradid-common/vc/schema"
 	"github.com/ugradid/ugradid-node/network"
 	"github.com/ugradid/ugradid-node/network/dag"
+	"github.com/ugradid/ugradid-node/vcr/credential"
 	"github.com/ugradid/ugradid-node/vcr/log"
 )
 
@@ -48,6 +50,8 @@ func NewAmbassador(networkClient network.Transactions, writer Writer) Ambassador
 // Configure instructs the ambassador to start receiving DID Documents from the network.
 func (n ambassador) Configure() {
 	n.networkClient.Subscribe(vcDocumentType, n.vcCallback)
+	n.networkClient.Subscribe(revocationDocumentType, n.rCallback)
+	n.networkClient.Subscribe(schemaDocumentType, n.schemaCallback)
 }
 
 // vcCallback gets called when new Verifiable Credentials are received by the network. All checks on the signature are already performed.
@@ -65,3 +69,30 @@ func (n ambassador) vcCallback(tx dag.Transaction, payload []byte) error {
 	return n.writer.StoreCredential(target)
 }
 
+// rCallback gets called when new credential revocations are received by the network. All checks on the signature are already performed.
+// The VCR is used to verify the contents of the revocation.
+// payload should be a json encoded Revocation
+func (n ambassador) rCallback(tx dag.Transaction, payload []byte) error {
+	log.Logger().Debugf("Processing VC revocation received from network (ref=%s)", tx.Ref())
+
+	r := credential.Revocation{}
+	if err := json.Unmarshal(payload, &r); err != nil {
+		return errors.Wrap(err, "revocation processing failed")
+	}
+
+	// Verify and store
+	return n.writer.StoreRevocation(r)
+}
+
+// schemaCallback gets called when new schema vc are received by the network.
+func (n ambassador) schemaCallback(tx dag.Transaction, payload []byte) error {
+	log.Logger().Debugf("Processing VC schema received from network (ref=%s)", tx.Ref())
+
+	sc := schema.Schema{}
+	if err := json.Unmarshal(payload, &sc); err != nil {
+		return errors.Wrap(err, "schema processing failed")
+	}
+
+	// Verify and store
+	return n.writer.StoreSchema(sc)
+}

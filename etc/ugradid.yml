@@ -2,12 +2,7 @@ verbosity: trace
 http:
   secret: 123456
   default:
-    address: 127.0.0.1:1322
-    auth: token
-  alt:
-    internal:
-      address: 127.0.0.1:1323
-      auth: token
+    address: 127.0.0.1:1323
 network:
   publicaddr: 127.0.0.1:5555
   truststorefile: etc/truststore.pem

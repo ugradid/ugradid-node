@@ -49,19 +49,19 @@ func BuildRevocation(credential vc.VerifiableCredential) Revocation {
 // ValidateRevocation checks if a revocation record contains the required fields and if fields have the correct value.
 func ValidateRevocation(r Revocation) error {
 	if r.Subject.String() == "" || r.Subject.Fragment == "" {
-		return failure("'subject' is required and requires a valid fragment")
+		return failureValidate("'subject' is required and requires a valid fragment")
 	}
 
 	if r.Issuer.String() == "" {
-		return failure("'issuer' is required")
+		return failureValidate("'issuer' is required")
 	}
 
 	if r.Date.IsZero() {
-		return failure("'date' is required")
+		return failureValidate("'date' is required")
 	}
 
 	if r.Proof == nil {
-		return failure("'proof' is required")
+		return failureValidate("'proof' is required")
 	}
 
 	return nil

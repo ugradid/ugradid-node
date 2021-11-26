@@ -18,9 +18,12 @@
 package credential
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ugradid/ugradid-common/vc"
+	"github.com/ugradid/ugradid-common/vc/schema"
+	"github.com/ugradid/ugradid-node/network/log"
 )
 
 // Validator is the interface specific VC verification.
@@ -31,7 +34,7 @@ type Validator interface {
 }
 
 // ErrValidation is a common error indicating validation failed
-var ErrValidation = errors.New("validation failed")
+var ErrValidation = errors.New("credential validation failed")
 
 type validationError struct {
 	msg string
@@ -47,7 +50,7 @@ func (err *validationError) Is(target error) bool {
 	return errors.Is(target, ErrValidation)
 }
 
-func failure(err string, args ...interface{}) error {
+func failureValidate(err string, args ...interface{}) error {
 	errStr := fmt.Sprintf(err, args...)
 	return &validationError{errStr}
 }
@@ -55,38 +58,61 @@ func failure(err string, args ...interface{}) error {
 // Validate the default fields
 func Validate(credential vc.VerifiableCredential) error {
 	if !credential.IsType(vc.VerifiableCredentialTypeV1URI()) {
-		return failure("type 'VerifiableCredential' is required")
+		return failureValidate("type 'VerifiableCredential' is required")
 	}
 
 	if !credential.ContainsContext(vc.VCContextV1URI()) {
-		return failure("default context is required")
+		return failureValidate("default context is required")
 	}
 
 	if !credential.ContainsContext(*UgraContextURI) {
-		return failure("ugra context is required")
+		return failureValidate("ugra context is required")
 	}
 
 	if credential.ID == nil {
-		return failure("'ID' is required")
+		return failureValidate("'ID' is required")
 	}
 
 	if credential.IssuanceDate.IsZero() {
-		return failure("'issuanceDate' is required")
+		return failureValidate("'issuanceDate' is required")
 	}
 
 	if credential.Proof == nil {
-		return failure("'proof' is required")
+		return failureValidate("'proof' is required")
 	}
 
 	return nil
 }
 
-type defaultCredentialValidator struct{}
+type schemaCredentialValidator struct {
+}
 
-func (d defaultCredentialValidator) Validate(credential vc.VerifiableCredential) error {
-	if err := Validate(credential); err != nil {
+func (d schemaCredentialValidator) Validate(credential vc.VerifiableCredential) error {
+	if credential.CredentialSchema == nil {
+		return failureValidate("credential schema is required")
+	}
+	return Validate(credential)
+}
+
+// ValidateCredential a credential's data is valid against its schema
+func ValidateCredential(credentialSubjectSchema schema.Schema, cred vc.VerifiableCredential) error {
+
+	credentialSubjectSchemaJSONBytes, err := json.Marshal(credentialSubjectSchema.Schema)
+	if err != nil {
 		return err
 	}
-	return nil
-}
+	credentialSubjectSchemaJSON := string(credentialSubjectSchemaJSONBytes)
 
+	log.Logger().Tracef("%+v", credentialSubjectSchemaJSON)
+
+	credentialSubjectJSONBytes, err := json.Marshal(cred.CredentialSubject)
+	if err != nil {
+		return err
+	}
+	credentialSubjectJSON := string(credentialSubjectJSONBytes)
+
+	log.Logger().Tracef("%+v", credentialSubjectJSON)
+
+	// Validate against the credential subject s
+	return schema.Validate(credentialSubjectSchemaJSON, credentialSubjectJSON)
+}

@@ -15,27 +15,37 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-package v1
+package schema
 
 import (
-	"github.com/ugradid/ugradid-common/vc"
+	"errors"
+	"github.com/google/uuid"
+	ssi "github.com/ugradid/ugradid-common"
 	"github.com/ugradid/ugradid-common/vc/schema"
+	"time"
 )
 
-// VerifiableCredential is an alias to use from within the API
-type VerifiableCredential = vc.VerifiableCredential
+var nowFunc = time.Now
 
-// CredentialSubject is an alias to use from within the API
-type CredentialSubject = interface{}
+const (
+	schemaVersion = "1.0"
+)
 
-// IssueVCRequest is an alias to use from within the API for issuing VCs.
-type IssueVCRequest = vc.VerifiableCredential
+func FillSchema(template *schema.Schema) error  {
 
-// CreateSchemaRequest isa an alias
-type CreateSchemaRequest = schema.Schema
+	template.Type = *UgraSchemaTypeURI
+	template.Version = schemaVersion
+	template.Authored = nowFunc()
 
-// Schema isa an alias
-type Schema = schema.Schema
+	id := schema.GenerateSchemaID(template.Author, uuid.New().String(), template.Version)
 
-// JsonSchema is an alias
-type JsonSchema =schema.JsonSchema
+	schemaId, err := ssi.ParseURI(id)
+
+	if err != nil {
+		return errors.New("failed generate credential id")
+	}
+
+	template.ID = schemaId
+
+	return nil
+}

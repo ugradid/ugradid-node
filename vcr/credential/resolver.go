@@ -17,16 +17,49 @@
 
 package credential
 
-import "github.com/ugradid/ugradid-common/vc"
+import (
+	"errors"
+	"fmt"
+	"github.com/ugradid/ugradid-common/vc"
+)
+
+// ErrResolveCredential is a common error indicating validation failed
+var ErrResolveCredential = errors.New("credential resolve failed")
+
+type resolveError struct {
+	msg string
+}
+
+// Error returns the error message
+func (err *resolveError) Error() string {
+	return fmt.Sprintf("resolve failed: %s", err.msg)
+}
+
+// Is checks if validationError matches the target error
+func (err *resolveError) Is(target error) bool {
+	return errors.Is(target, ErrValidation)
+}
+
+func failureResolve(err string, args ...interface{}) error {
+	errStr := fmt.Sprintf(err, args...)
+	return &resolveError{errStr}
+}
 
 // FindValidatorAndBuilder finds the Validator and Builder for the credential Type
 // It returns nils when not found.
 // It only supports VCs with one additional type next to the default VerifiableCredential type.
-func FindValidatorAndBuilder(credential vc.VerifiableCredential) (Validator, Builder) {
+func FindValidatorAndBuilder(credential vc.VerifiableCredential) (Validator, Builder, error) {
 	if vcTypes := ExtractTypes(credential); len(vcTypes) > 0 {
-		return defaultCredentialValidator{}, defaultBuilder{}
+		for _, t := range vcTypes {
+			switch t {
+			case vc.SchemaCredentialType:
+				return schemaCredentialValidator{}, schemaCredentialBuilder{vcType: t}, nil
+			default:
+				return nil, nil, failureResolve("credential type '%s' is not supported", t)
+			}
+		}
 	}
-	return nil, nil
+	return nil, nil, failureResolve("credential type is required")
 }
 
 // ExtractTypes extract additional VC types from the VC as strings

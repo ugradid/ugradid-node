@@ -21,11 +21,16 @@ const moduleName = "vcr"
 
 // Config holds the config for the vcr engine
 type Config struct {
-	// strictMode is a copy from the core server config
-	strictMode bool
+	// File name store
+	File string `koanf:"vcr.store.file"`
+	// TrustedFIle name file
+	TrustedFile string `koanf:"vcr.trusted_issuers"`
 }
 
 // DefaultConfig returns a fresh Config filled with default values
 func DefaultConfig() Config {
-	return Config{}
+	return Config{
+		File: "vcr.db",
+		TrustedFile: "trusted_issuers.yaml",
+	}
 }

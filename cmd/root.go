@@ -26,6 +26,7 @@ import (
 	networkAPI "github.com/ugradid/ugradid-node/network/api/v1"
 	"github.com/ugradid/ugradid-node/vcr"
 	vcrAPI "github.com/ugradid/ugradid-node/vcr/api/v1"
+	vcrCmd "github.com/ugradid/ugradid-node/vcr/cmd"
 	"github.com/ugradid/ugradid-node/vdr"
 	vdrAPI "github.com/ugradid/ugradid-node/vdr/api/v1"
 	vdrCmd "github.com/ugradid/ugradid-node/vdr/cmd"
@@ -231,4 +232,5 @@ func Execute(system *core.System) {
 func addFlagSets(cmd *cobra.Command) {
 	cmd.PersistentFlags().AddFlagSet(core.FlagSet())
 	cmd.PersistentFlags().AddFlagSet(vdrCmd.FlagSet())
+	cmd.PersistentFlags().AddFlagSet(vcrCmd.FlagSet())
 }

@@ -73,6 +73,7 @@ func (c *MultiEcho) Add(method, path string, handler echo.HandlerFunc, middlewar
 	return iface.Add(method, path, handler, middleware...)
 }
 
+// Get the group name from the path URL. The group is computed up to the first slash in the path.
 func getGroup(path string) string {
 	parts := strings.Split(path, "/")
 	for _, part := range parts {

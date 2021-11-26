@@ -8,15 +8,41 @@ info:
 servers:
   - url: http://localhost:1323
 paths:
-  /internal/vcr/v1/vc/new:
+  /internal/vcr/v1/schema:
     post:
-      summary: Creates a new Verifiable Credential
+      summary: Creates a new Verifiable Credential Schema
       description: |
-        Creates a new Verifiable Credential.
+        Creates a new Verifiable Credential Schema.
         error returns:
         * 400 - One or more of the given parameters are invalid
         * 500 - An error occurred while processing the request
       operationId: "create"
+      tags:
+        - credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSchemaRequest'
+      responses:
+        "200":
+          description: "New VC schema has been created successfully. Returns the Verifiable Credential schema."
+          content:
+            application/vc+json:
+              schema:
+                $ref: '#/components/schemas/Schema'
+        default:
+          $ref: '../common/error_response.yaml'
+  /internal/vcr/v1/vc/new:
+    post:
+      summary: Issue a new Verifiable Credential
+      description: |
+        Issue a new Verifiable Credential.
+        error returns:
+        * 400 - One or more of the given parameters are invalid
+        * 500 - An error occurred while processing the request
+      operationId: "issue"
       tags:
         - credential
       requestBody:
@@ -200,6 +226,37 @@ components:
         proof:
           description: one or multiple cryptographic proofs
           type: object
+    Schema:
+      type: object
+      description: A credential according to the W3C and Nuts specs.
+      required:
+        - type
+        - version
+        - id
+        - name
+        - author
+        - authored
+        - schema
+        - proof
+      properties:
+        type:
+          description: credential ID. A DID followed by a large number.
+          type: string
+        version:
+          description: credential ID. A DID followed by a large number.
+          example: "1.0"
+          type: string
+        author:
+          $ref: '#/components/schemas/DID'
+        authored:
+          description: rfc3339 time string when the credential was issued.
+          type: string
+          example: "2012-01-02T12:00:00Z"
+        schema:
+          $ref: '#/components/schemas/JsonSchema'
+        proof:
+          description: one or multiple cryptographic proofs
+          type: object
     IssueVCRequest:
       type: object
       description: A request for issuing a new Verifiable Credential.
@@ -222,10 +279,31 @@ components:
           example: "2012-01-02T12:00:00Z"
         credentialSubject:
           $ref: '#/components/schemas/CredentialSubject'
+    CreateSchemaRequest:
+      type: object
+      description: A request for create a new Verifiable Credential schema.
+      required:
+        - name
+        - author
+        - schema
+      properties:
+        name:
+          description: Type definition for the credential.
+          type: string
+          example: "organization"
+        author:
+          description: DID according to specification.
+          type: string
+          example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY"
+        schema:
+          $ref: '#/components/schemas/JsonSchema'
     DID:
       type: string
       description: DID according to specification
       example: "did:ugra:B8PUHs2AUHbFF1xLLK4eZjgErEcMXHxs68FteY7NDtCY"
+    JsonSchema:
+      type: object
+      description: Json schema.
     CredentialSubject:
       type: object
       description: Subject of a Verifiable Credential identifying the holder and expressing claims.

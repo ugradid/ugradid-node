@@ -93,9 +93,12 @@ func (n *Network) Configure(config core.ServerConfig) error {
 		return fmt.Errorf("unable to create BBolt database: %w", bboltErr)
 	}
 
-	n.graph = dag.NewBBoltDAG(db, dag.NewSigningTimeVerifier(), dag.NewPrevTransactionsVerifier(), dag.NewTransactionSignatureVerifier(n.keyResolver))
-
 	n.payloadStore = dag.NewBBoltPayloadStore(db)
+	n.graph = dag.NewBBoltDAG(db,
+		dag.NewSigningTimeVerifier(),
+		dag.NewPrevTransactionsVerifier(),
+		dag.NewTransactionSignatureVerifier(n.keyResolver, n.payloadStore))
+
 	n.publisher = dag.NewReplayingDAGPublisher(n.payloadStore, n.graph)
 	n.peerID = transport.PeerId(uuid.New().String())
 
