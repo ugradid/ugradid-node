@@ -18,26 +18,30 @@
 package schema
 
 import (
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ugradid/ugradid-common/vc/schema"
+	"github.com/ugradid/ugradid-node/vcr/log"
+	"github.com/xeipuuv/gojsonschema"
+	"strings"
 )
 
-type Validator interface {
-	// Validate the given credential schema according to the rules of the schema type
-	Validate(sc schema.Schema) error
-}
+var (
+	//go:embed assets/draft07.json
+	draft07 string
+)
 
 // ErrValidation is a common error indicating validation failed
 var ErrValidation = errors.New("schema validation failed")
 
 type validationError struct {
-	msg string
+	Errors []string
 }
 
-// Error returns the error message
-func (err *validationError) Error() string {
-	return fmt.Sprintf("validation failed: %s", err.msg)
+func (err validationError) Error() string {
+	return fmt.Sprintf("invalid schema: %s", strings.Join(err.Errors, ", "))
 }
 
 // Is checks if validationError matches the target error
@@ -47,7 +51,44 @@ func (err *validationError) Is(target error) bool {
 
 func failure(err string, args ...interface{}) error {
 	errStr := fmt.Sprintf(err, args...)
-	return &validationError{errStr}
+	return &validationError{Errors: []string{errStr}}
+}
+
+// ValidateJsonSchema exists to hide gojsonschema logic within this file
+// it is the entry-point to validation logic, requiring the caller pass in valid json strings for each argument
+func ValidateJsonSchema(schema, document string) error {
+	if !IsJSON(schema) {
+		return failure("schema is not valid json: %s", schema)
+	} else if !IsJSON(document) {
+		return failure("document is not valid json: %s", document)
+	}
+	return ValidateWithJSONLoader(gojsonschema.NewStringLoader(schema), gojsonschema.NewStringLoader(document))
+}
+
+// ValidateWithJSONLoader takes schema and document loaders; the document from the loader is validated against
+// the schema from the loader. Nil if good, error if bad
+func ValidateWithJSONLoader(schemaLoader, documentLoader gojsonschema.JSONLoader) error {
+	// Add custom validator(s) and then ValidateWithJSONLoader
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		return err
+	}
+
+	if !result.Valid() {
+		// Accumulate errs
+		var errs []string
+		for _, err := range result.Errors() {
+			errs = append(errs, err.String())
+		}
+		return validationError{Errors: errs}
+	}
+	return nil
+}
+
+// IsJSON True if string is valid JSON, false otherwise
+func IsJSON(str string) bool {
+	var js json.RawMessage
+	return json.Unmarshal([]byte(str), &js) == nil
 }
 
 func Validate(sc schema.Schema) error {
@@ -78,10 +119,14 @@ func Validate(sc schema.Schema) error {
 	return nil
 }
 
-type JsonSchemaValidator struct{}
+func ValidateSchema(sc schema.Schema) error {
+	data, err := json.Marshal(sc.Schema)
+	if err != nil {
+		return err
+	}
+	log.Logger().Tracef("%+v", data)
 
-func (d JsonSchemaValidator) Validate(sc schema.Schema) error {
-	if err := schema.ValidateJSONSchema(sc.Schema); err != nil {
+	if err := ValidateJsonSchema(draft07, string(data)); err != nil {
 		return err
 	}
 	return Validate(sc)

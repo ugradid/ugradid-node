@@ -38,6 +38,9 @@ type CredentialIssuer struct {
 // DID according to specification
 type DID string
 
+// Json schema.
+type JsonSchema map[string]interface{}
+
 // result of a Resolve operation.
 type ResolutionResult struct {
 	// Only credentials with with "trusted" state are valid. If a revoked credential is also untrusted, revoked will be returned.

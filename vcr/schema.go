@@ -34,11 +34,6 @@ import (
 
 func (c *vcr) Create(template schema.Schema) (*schema.Schema, error) {
 
-	validator, err := schema2.FindValidator(template.Schema)
-	if err != nil {
-		return nil, err
-	}
-
 	sc := schema.Schema{
 		Name:   template.Name,
 		Author: template.Author,
@@ -79,7 +74,7 @@ func (c *vcr) Create(template schema.Schema) (*schema.Schema, error) {
 	}
 
 	// do same validation as network nodes
-	if err := validator.Validate(sc); err != nil {
+	if err := schema2.ValidateSchema(sc); err != nil {
 		return nil, err
 	}
 
@@ -100,12 +95,7 @@ func (c *vcr) Create(template schema.Schema) (*schema.Schema, error) {
 
 func (c *vcr) verifySchema(sc schema.Schema) error {
 	// it must have valid content
-	validator, err := schema2.FindValidator(sc.Schema)
-	if err != nil {
-		return err
-	}
-
-	if err := validator.Validate(sc); err != nil {
+	if err := schema2.ValidateSchema(sc); err != nil {
 		return err
 	}
 

@@ -24,6 +24,7 @@ import (
 	"github.com/ugradid/ugradid-common/vc"
 	"github.com/ugradid/ugradid-common/vc/schema"
 	"github.com/ugradid/ugradid-node/network/log"
+	schema2 "github.com/ugradid/ugradid-node/vcr/schema"
 )
 
 // Validator is the interface specific VC verification.
@@ -114,5 +115,5 @@ func ValidateCredential(credentialSubjectSchema schema.Schema, cred vc.Verifiabl
 	log.Logger().Tracef("%+v", credentialSubjectJSON)
 
 	// Validate against the credential subject s
-	return schema.Validate(credentialSubjectSchemaJSON, credentialSubjectJSON)
+	return schema2.ValidateJsonSchema(credentialSubjectSchemaJSON, credentialSubjectJSON)
 }

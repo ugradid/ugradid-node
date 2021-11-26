@@ -36,6 +36,3 @@ type CreateSchemaRequest = schema.Schema
 
 // Schema isa an alias
 type Schema = schema.Schema
-
-// JsonSchema is an alias
-type JsonSchema =schema.JsonSchema

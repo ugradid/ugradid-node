@@ -23,6 +23,7 @@ require (
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	schneider.vip/problem v1.6.0
+	github.com/xeipuuv/gojsonschema v1.2.0
 )
 
 replace github.com/ugradid/ugradid-common v0.1.0 => ../ugradid-common

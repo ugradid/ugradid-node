@@ -28,13 +28,13 @@ import (
 var nowFunc = time.Now
 
 const (
-	schemaVersion = "1.0"
+	ModelVersionV1 = "1.0"
 )
 
 func FillSchema(template *schema.Schema) error  {
 
 	template.Type = *UgraSchemaTypeURI
-	template.Version = schemaVersion
+	template.Version = ModelVersionV1
 	template.Authored = nowFunc()
 
 	id := schema.GenerateSchemaID(template.Author, uuid.New().String(), template.Version)
