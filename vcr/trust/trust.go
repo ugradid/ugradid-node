@@ -82,8 +82,8 @@ func (tc *Config) save() error {
 }
 
 // List returns all trusted issuers for the given type
-func (tc *Config) List(credentialType ssi.URI) []ssi.URI {
-	stringList := tc.issuersPerType[credentialType.String()]
+func (tc *Config) List(credentialType string) []ssi.URI {
+	stringList := tc.issuersPerType[credentialType]
 	uriList := make([]ssi.URI, len(stringList))
 	for i, e := range stringList {
 		u, _ := ssi.ParseURI(e)
@@ -93,9 +93,9 @@ func (tc *Config) List(credentialType ssi.URI) []ssi.URI {
 }
 
 // IsTrusted returns true when the given issuer is in the trusted issuers list of the given credentialType
-func (tc *Config) IsTrusted(credentialType ssi.URI, issuer ssi.URI) bool {
+func (tc *Config) IsTrusted(credentialType string, issuer ssi.URI) bool {
 	issuerString := issuer.String()
-	for _, i := range tc.issuersPerType[credentialType.String()] {
+	for _, i := range tc.issuersPerType[credentialType] {
 		if i == issuerString {
 			return true
 		}
@@ -106,42 +106,39 @@ func (tc *Config) IsTrusted(credentialType ssi.URI, issuer ssi.URI) bool {
 
 // AddTrust adds trust in a specific Issuer for a credential type.
 // It returns an error if the Save fails
-func (tc *Config) AddTrust(credentialType ssi.URI, issuer ssi.URI) error {
+func (tc *Config) AddTrust(credentialType string, issuer ssi.URI) error {
 	tc.mutex.Lock()
 	defer tc.mutex.Unlock()
-
-	tString := credentialType.String()
 
 	if tc.IsTrusted(credentialType, issuer) {
 		return nil
 	}
 
-	tc.issuersPerType[tString] = append(tc.issuersPerType[tString], issuer.String())
+	tc.issuersPerType[credentialType] = append(tc.issuersPerType[credentialType], issuer.String())
 
 	return tc.save()
 }
 
 // RemoveTrust removes trust in a specific Issuer for a credential type.
 // It returns an error if the Save fails
-func (tc *Config) RemoveTrust(credentialType ssi.URI, issuer ssi.URI) error {
+func (tc *Config) RemoveTrust(credentialType string, issuer ssi.URI) error {
 	tc.mutex.Lock()
 	defer tc.mutex.Unlock()
-	tString := credentialType.String()
 
 	if !tc.IsTrusted(credentialType, issuer) {
 		return nil
 	}
 
-	var issuerList = make([]string, len(tc.issuersPerType[tString])-1)
+	var issuerList = make([]string, len(tc.issuersPerType[credentialType])-1)
 	j := 0
-	for _, i := range tc.issuersPerType[tString] {
+	for _, i := range tc.issuersPerType[credentialType] {
 		if i != issuer.String() {
 			issuerList[j] = i
 			j++
 		}
 	}
 
-	tc.issuersPerType[tString] = issuerList
+	tc.issuersPerType[credentialType] = issuerList
 
 	return tc.save()
 }

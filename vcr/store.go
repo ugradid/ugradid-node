@@ -27,6 +27,7 @@ import (
 	"github.com/ugradid/ugradid-node/vcr/concept"
 	"github.com/ugradid/ugradid-node/vcr/credential"
 	"github.com/ugradid/ugradid-node/vcr/log"
+	"time"
 )
 
 const revocationCollection = "revocation"
@@ -34,8 +35,8 @@ const revocationCollection = "revocation"
 const schemaCollection = "schema"
 
 // StoreCredential store vc document
-func (c *vcr) StoreCredential(credential vc.VerifiableCredential) error {
-	if err := c.Verify(credential, nil); err != nil {
+func (c *vcr) StoreCredential(credential vc.VerifiableCredential, validAt *time.Time) error {
+	if err := c.Verify(credential, validAt); err != nil {
 		return err
 	}
 	return c.writeCredential(credential)
@@ -67,7 +68,11 @@ func (c *vcr) GetCredential(ID ssi.URI, credentialType string) (vc.VerifiableCre
 
 func (c *vcr) writeCredential(subject vc.VerifiableCredential) error {
 
-	vcTypes := credential.ExtractTypes(subject)
+	writer, err := credential.FindWriter(subject)
+
+	if err != nil {
+		return err
+	}
 
 	log.Logger().Tracef("%+v", subject)
 
@@ -77,17 +82,17 @@ func (c *vcr) writeCredential(subject vc.VerifiableCredential) error {
 		return err
 	}
 
+	vcType, err := writer.Resolve(subject)
+
 	document := eibb.DocumentFromBytes(docJson)
 	var errColl error
 
-	for _, vcType := range vcTypes {
-		log.Logger().Debugf("Writing %s to vcr store", vcType)
+	log.Logger().Debugf("Writing type '%s' to vcr store", vcType)
 
-		collection := c.store.Collection(vcType)
+	collection := c.store.Collection(vcType)
 
-		if errColl = collection.Add([]eibb.Document{document}); err != nil {
-			return errColl
-		}
+	if errColl = collection.Add([]eibb.Document{document}); err != nil {
+		return errColl
 	}
 
 	return nil

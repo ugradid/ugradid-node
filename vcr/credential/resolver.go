@@ -46,8 +46,6 @@ func failureResolve(err string, args ...interface{}) error {
 }
 
 // FindValidatorAndBuilder finds the Validator and Builder for the credential Type
-// It returns nils when not found.
-// It only supports VCs with one additional type next to the default VerifiableCredential type.
 func FindValidatorAndBuilder(credential vc.VerifiableCredential) (Validator, Builder, error) {
 	if vcTypes := ExtractTypes(credential); len(vcTypes) > 0 {
 		for _, t := range vcTypes {
@@ -60,6 +58,21 @@ func FindValidatorAndBuilder(credential vc.VerifiableCredential) (Validator, Bui
 		}
 	}
 	return nil, nil, failureResolve("credential type is required")
+}
+
+// FindWriter finds the Writer for the credential Type
+func FindWriter(credential vc.VerifiableCredential) (Writer, error) {
+	if vcTypes := ExtractTypes(credential); len(vcTypes) > 0 {
+		for _, t := range vcTypes {
+			switch t {
+			case vc.SchemaCredentialType:
+				return schemaWriterCredential{}, nil
+			default:
+				return nil, failureResolve("credential type '%s' is not supported", t)
+			}
+		}
+	}
+	return nil, failureResolve("credential type is required")
 }
 
 // ExtractTypes extract additional VC types from the VC as strings

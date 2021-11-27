@@ -305,9 +305,9 @@ func (c *vcr) Resolve(ID ssi.URI, credentialType string, resolveTime *time.Time)
 	return &credential, nil
 }
 
-func (c *vcr) Validate(credential vc.VerifiableCredential, allowUntrusted bool, checkSignature bool, validAt *time.Time) error {
+func (c *vcr) Validate(vc vc.VerifiableCredential, allowUntrusted bool, checkSignature bool, validAt *time.Time) error {
 
-	revoked, err := c.isRevoked(*credential.ID)
+	revoked, err := c.isRevoked(*vc.ID)
 	if revoked {
 		return ErrRevoked
 	}
@@ -316,26 +316,27 @@ func (c *vcr) Validate(credential vc.VerifiableCredential, allowUntrusted bool, 
 	}
 
 	if !allowUntrusted {
-		trusted := c.isTrusted(credential)
+
+		writer, err := credential.FindWriter(vc)
+		if err != nil {
+			return  err
+		}
+
+		vcType, err := writer.Resolve(vc)
+		if err != nil {
+			return  err
+		}
+
+		trusted := c.trustConfig.IsTrusted(vcType, vc.Issuer)
 		if !trusted {
 			return ErrUntrusted
 		}
 	}
 
 	if checkSignature {
-		return c.Verify(credential, validAt)
+		return c.Verify(vc, validAt)
 	}
-	return c.validate(credential, validAt)
-}
-
-func (c *vcr) isTrusted(credential vc.VerifiableCredential) bool {
-	for _, t := range credential.Type {
-		if c.trustConfig.IsTrusted(t, credential.Issuer) {
-			return true
-		}
-	}
-
-	return false
+	return c.validate(vc, validAt)
 }
 
 func (c *vcr) generateProof(credential *vc.VerifiableCredential, kid ssi.URI, key crypto.Key) error {

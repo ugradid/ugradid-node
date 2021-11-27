@@ -59,7 +59,7 @@ var schemaDocumentType = "application/vc+json;type=schema"
 // Writer is the interface that groups al the VC write methods
 type Writer interface {
 	// StoreCredential writes a VC to storage. Before writing, it calls Verify!
-	StoreCredential(vc vc.VerifiableCredential) error
+	StoreCredential(vc vc.VerifiableCredential, validAt *time.Time) error
 	// StoreRevocation writes a revocation to storage.
 	StoreRevocation(r credential.Revocation) error
 	// StoreSchema writes a credential schema to storage
